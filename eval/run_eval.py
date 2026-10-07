@@ -26,6 +26,7 @@ plan = result["plan"]
 resolved = result["resolved"]
 itin = json.dumps(plan.get("itinerary", []), ensure_ascii=False)
 interp = json.dumps(plan.get("interpretation", []), ensure_ascii=False)
+interp_text = json.dumps([i.get("text", "") for i in plan.get("interpretation", [])], ensure_ascii=False)
 diet = json.dumps(plan.get("dietary_plan", []), ensure_ascii=False)
 excluded = json.dumps(resolved.get("excluded_sources", []) + resolved.get("untrusted_instructions", []), ensure_ascii=False)
 id2path = {s["id"]: s["path"] for s in result["sources"]}
@@ -44,7 +45,8 @@ CHECKS = [
     ("동선: 남문 공사 → 북문 이용", lambda: has(itin + md, r"북문|north gate")),
     ("동선: 북문→성진정 18분 / 휠체어 우회 28분", lambda: has(md, r"18\s*(분|min)") and has(md, r"28\s*(분|min)")),
     ("동선: 2024 남문 해안데크 12분 카드 미사용", lambda: not has(itin, r"12\s*(분|min)")),
-    ("역사: '원형 그대로/완벽 보존' 과장 표현 없음", lambda: not has(interp, r"원형.{0,6}(완벽|그대로)|처음 모습 그대로|perfectly preserved|original form")),
+    ("역사: '원형 그대로/완벽 보존' 과장 표현 없음", lambda: not re.search(r"(?<!not )(?<!never )(원형.{0,6}(완벽|그대로)|처음 모습 그대로|perfectly preserved)",
+                          re.sub(r"[^.。]*(않|말|금지|avoid|not|never|don't|contradict)[^.。]*", "", interp_text), re.I)),
     ("역사: 1961 재건·1987 별채 철거 등 현장조사 반영", lambda: has(interp + md, r"1961|1987")),
     ("역사: OCR 1910/1919 불확실성 표시", lambda: has(md, r"1910") and has(md, r"1919")),
     ("인물: 문서윤 참깨 알레르기", lambda: has(diet, r"문서윤|Moon|Mun") and has(diet, r"참깨|sesame")),

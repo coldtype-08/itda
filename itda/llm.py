@@ -40,6 +40,8 @@ class LLM:
         self.no_think_supported = True
 
     def _base(self, model: str) -> str:
+        if self.cfg.small_base_url and model == self.cfg.model_small:
+            return self.cfg.small_base_url
         if self.cfg.fast_base_url and model == self.cfg.model_fast and model != self.cfg.model_main:
             return self.cfg.fast_base_url
         return self.cfg.llm_base_url

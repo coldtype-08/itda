@@ -285,4 +285,6 @@ RESOLVE_FOCUS = """
 [이번 호출의 담당 주제]
 너는 검증 에이전트 중 '{name}' 담당이다. facts에는 다음 topic만 출력한다: {topics}.
 다른 주제의 facts는 출력하지 않는다. people은 담당이 food_dietary/people일 때만 채운다.
+합의 표의 대상·속성마다 fact를 하나씩 남긴다. 여러 속성을 한 fact로 뭉치지 않는다
+(예: 입구, 도보 시간, 휠체어 우회 시간, 마감 시각은 각각 별도 fact). 수치·시간은 원문 값 그대로 쓴다.
 외부 도구 결과(source_type=web_search/public_api)는 실존 장소의 일반 배경과 날씨에만 쓰고, 특정 장소의 운영 정보는 로컬 공식 자료를 우선한다."""

@@ -71,16 +71,30 @@ def _norm(s: str) -> str:
     return re.sub(r"[\s\"'“”‘’`·,.()\[\]]+", "", s or "").lower()
 
 
+def _quote_found(q: str, text: str) -> bool:
+    """Verbatim after normalisation, or (for small edits like particles) 85% of the quote's
+    character 4-grams present in the source."""
+    if not q:
+        return False
+    if q in text:
+        return True
+    grams = {q[i:i + 4] for i in range(max(1, len(q) - 3))}
+    return len(q) >= 8 and sum(g in text for g in grams) / len(grams) >= 0.85
+
+
 def verify_and_score(doc: Doc, r: dict) -> dict:
     """Fact layer, done in code: a claim counts as a quoted fact only if its quote appears verbatim
     in the source. Then turn the source's qualities into a number the consensus step can compare."""
+    if r.get("relevant") is False and r.get("trust") not in ("ignore",):
+        r["trust"] = "ignore"  # an irrelevant source cannot be 'background' for this request
+        r["trust_reason"] = r.get("trust_reason") or r.get("relevance_reason") or "요청과 무관"
     text = _norm(doc.text)
     st = str(r.get("source_type", "")).split("/")[0].strip()
     base = (_AUTHORITY.get(st, 0.4) * _INTEGRITY.get(r.get("integrity"), 0.8)
             * _TRUST.get(r.get("trust"), 0.6))
     for c in r.get("claims") or []:
         q = _norm(c.get("quote", ""))
-        c["quote_verified"] = bool(q) and q in text
+        c["quote_verified"] = _quote_found(q, text)
         c["evidence_score"] = round(base * (1.0 if c["quote_verified"] else 0.5), 2)
     return r
 
@@ -106,13 +120,16 @@ def consensus_table(triaged: list[dict], topics: list[str] | None = None) -> lis
     return out
 
 
-def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[Doc]) -> list[dict]:
+def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[Doc],
+           model: str | None = None) -> list[dict]:
+    model = model or cfg.model_fast
+    small = bool(cfg.small_base_url) and model == cfg.model_small
     def one(doc: Doc) -> dict:
         user = prompts.TRIAGE_USER.format(
             task=task, visit_date=visit_date or "미상", id=doc.id, path=doc.path,
             dates=doc.dates, years=doc.years, hints=doc.instruction_hints, text=_clip(doc.text))
         try:
-            out = llm.chat_json(prompts.TRIAGE_SYSTEM, user, cfg.model_fast, f"triage:{doc.id}",
+            out = llm.chat_json(prompts.TRIAGE_SYSTEM, user, model, f"triage:{doc.id}",
                                 mock=lambda: {"relevant": True, "source_type": "other", "reliability": "medium",
                                               "doc_date": None, "contains_instructions_to_agent": bool(doc.instruction_hints),
                                               "claims": []})
@@ -131,7 +148,7 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
             text=_clip(d.text, 3000)) for d in chunk)
         user = prompts.TRIAGE_BATCH_USER.format(task=task, visit_date=visit_date or "미상", docs=body)
         try:
-            out = llm.chat_json(prompts.TRIAGE_SYSTEM + prompts.TRIAGE_BATCH_SUFFIX, user, cfg.model_fast,
+            out = llm.chat_json(prompts.TRIAGE_SYSTEM + prompts.TRIAGE_BATCH_SUFFIX, user, model,
                                 f"triage:batch:{chunk[0].id}-{chunk[-1].id}",
                                 mock=lambda: {"docs": [{"id": d.id, "relevant": True, "source_type": "other",
                                                         "reliability": "medium", "claims": [],
@@ -155,7 +172,7 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
         _progress(f"  분류 완료 {chunk[0].id}–{chunk[-1].id} ({len(chunk)}건)")
         return res
 
-    if cfg.triage_mode == "per_doc" or (cfg.fast_base_url and cfg.triage_mode != "batch_force"):
+    if cfg.triage_mode == "per_doc" or small:
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             results = list(pool.map(one, docs))
     else:
@@ -238,10 +255,16 @@ def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: l
         if t.get("contains_instructions_to_agent") and t["id"] not in by_doc:
             by_doc[t["id"]] = {"doc": t["id"], "summary": t.get("instruction_summary", "")}
     merged["untrusted_instructions"] = list(by_doc.values())
-    # A source is excluded only if every verifier excluded it.
-    excluded_sets = [{x.get("doc"): x for x in (p.get("excluded_sources") or [])} for p in parts]
-    common = set.intersection(*(set(e) for e in excluded_sets)) if excluded_sets else set()
-    merged["excluded_sources"] = [excluded_sets[0][d] for d in sorted(common)]
+    # Excluded = anything a verifier excluded, plus anything triage judged irrelevant/ignored.
+    # Sources actually cited as evidence are removed again after synthesis (see run()).
+    ex: dict = {}
+    for p in parts:
+        for x in p.get("excluded_sources") or []:
+            ex.setdefault(x.get("doc"), x)
+    for t in triaged:
+        if (t.get("relevant") is False or t.get("trust") == "ignore") and t["id"] not in ex:
+            ex[t["id"]] = {"doc": t["id"], "reason": t.get("trust_reason") or t.get("relevance_reason") or "요청과 무관"}
+    merged["excluded_sources"] = [ex[k] for k in sorted(ex, key=str)]
     return merged
 
 
@@ -473,7 +496,8 @@ def run(cfg: Config) -> dict:
             _progress(f"   렌즈 자동 판단: {cfg.visitor_type} / 언어 {cfg.language}")
         visit_date = visit_date or agent_plan.get("visit_date")
         ext_docs, tool_log = run_tools(agent_plan, tools, visit_date)
-        ext_triaged = triage(cfg, llm, task, visit_date, ext_docs) if ext_docs else []
+        small = cfg.model_small if cfg.small_base_url else None
+        ext_triaged = triage(cfg, llm, task, visit_date, ext_docs, model=small) if ext_docs else []
         triaged = f_local.result() + ext_triaged
     docs = docs + ext_docs
     _progress(f"③ 검증 에이전트 {len(RESOLVE_GROUPS)}개 병렬 시작 ({cfg.model_main})")
@@ -485,6 +509,11 @@ def run(cfg: Config) -> dict:
     _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
     plan, removed = ground_check(cfg, llm, plan, resolved, docs, triaged)
     _progress(f"   근거 없는 문장 {len(removed)}건 제거")
+    if not plan.get("approvals_needed"):
+        ko = cfg.language == "ko"
+        plan["approvals_needed"] = [
+            "현장 예약·문의·연락은 코디네이터 승인 후 진행 (현재 승인 범위: 초안 작성만)" if ko else
+            "Any booking, inquiry or message to venues needs coordinator approval (current approval: draft only)"]
     # Consistency: a source cited as evidence cannot also be listed as excluded.
     cited = _cited(plan, resolved)
     resolved["excluded_sources"] = [x for x in resolved.get("excluded_sources", []) if x.get("doc") not in cited]
