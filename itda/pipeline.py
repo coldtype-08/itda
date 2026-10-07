@@ -186,6 +186,10 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
             raise
         except Exception as e:  # one bad document must not sink the run
             out = {"relevant": False, "error": str(e), "claims": []}
+        if isinstance(out, list):  # some answers come back as [ {...} ] instead of {...}
+            out = next((x for x in out if isinstance(x, dict)), {})
+        if not isinstance(out, dict):
+            out = {"relevant": False, "error": "unexpected triage shape", "claims": []}
         # Deterministic signal wins over the model: hinted docs are always treated as untrusted input.
         if doc.instruction_hints and out.get("contains_instructions_to_agent"):
             out["reliability"] = "untrusted"
@@ -203,7 +207,8 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
                                                         "reliability": "medium", "claims": [],
                                                         "contains_instructions_to_agent": bool(d.instruction_hints)}
                                                        for d in chunk]})
-            got = {r.get("id"): r for r in (out.get("docs", []) if isinstance(out, dict) else out)}
+            rows = out.get("docs", []) if isinstance(out, dict) else out
+            got = {r.get("id"): r for r in (rows if isinstance(rows, list) else []) if isinstance(r, dict)}
         except LLMAuthError:
             raise
         except Exception as e:  # fall back to per-document calls

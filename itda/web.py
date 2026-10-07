@@ -51,6 +51,8 @@ def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
     out = RUNS / job
     out.mkdir(parents=True, exist_ok=True)
     args = ["--visitor", visitor, "--interests", ",".join(interests)]
+    if req and req.get("lang") in ("ko", "en", "ja", "zh"):
+        args += ["--lang", req["lang"]]
     extra_env = {}
     if req and req.get("mode") == "live":
         task, inp = _live_inputs(RUNS / f"{job}_in", req)
@@ -211,6 +213,8 @@ ul{padding-left:20px}
  </div>
  <div class="lbl">누가 가시나요?</div>
  <div class="chips" id="vis"><button class="chip on" data-v="auto">🤖 알아서 판단</button><button class="chip" data-v="foreign">🌏 해외 방문객</button><button class="chip" data-v="korean">🇰🇷 한국인</button></div>
+ <div class="lbl">결과를 어떤 언어로 볼까요?</div>
+ <div class="chips" id="lang"><button class="chip on" data-v="">자동 (방문객에 맞춤)</button><button class="chip" data-v="ko">한국어</button><button class="chip" data-v="en">English</button><button class="chip" data-v="ja">日本語</button></div>
  <div class="lbl">무엇이 궁금하세요? <span class="mut small">(여러 개 선택)</span></div>
  <div class="chips" id="int"><button class="chip on" data-v="history">📜 역사 이야기</button><button class="chip on" data-v="family">👨‍👩‍👧 가족·동행 배려</button><button class="chip" data-v="kculture">🎤 K-컬처</button></div>
  <button class="go" id="go">코스 만들기</button>
@@ -220,9 +224,9 @@ ul{padding-left:20px}
 <div id="res"></div><div id="dev" hidden></div>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let visitor='auto',mode='challenge';
+let visitor='auto',mode='challenge',lang='';
 const pick=(sel,single,cb)=>document.querySelectorAll(sel+' button').forEach(b=>b.onclick=()=>{if(single)document.querySelectorAll(sel+' button').forEach(x=>x.classList.remove('on'));b.classList.toggle('on',single?true:!b.classList.contains('on'));cb&&cb(b)});
-pick('#mode',true,b=>{mode=b.dataset.v;$('#live').hidden=mode!=='live'});pick('#vis',true,b=>visitor=b.dataset.v);pick('#int',false);
+pick('#mode',true,b=>{mode=b.dataset.v;$('#live').hidden=mode!=='live'});pick('#vis',true,b=>visitor=b.dataset.v);pick('#lang',true,b=>lang=b.dataset.v);pick('#int',false);
 pick('#tabs',true,b=>{$('#res').hidden=b.dataset.v!=='user';$('#dev').hidden=b.dataset.v!=='dev'});
 const STEPS=[['①','자료를 모으고 있어요'],['②','무엇을 확인할지 계획하고 검색하고 있어요'],['③','자료끼리 비교해서 믿을 만한지 따지고 있어요'],['④','상황에 맞는 코스를 짜고 있어요'],['⑤','모든 문장의 근거를 다시 확인하고 있어요']];
 $('#go').onclick=async()=>{
@@ -230,7 +234,7 @@ $('#go').onclick=async()=>{
   if(!interests.length){$('#prog').hidden=false;$('#st').textContent='궁금한 주제를 하나 이상 골라 주세요';return}
   if(mode==='live'&&$('#req').value.trim().length<5){$('#prog').hidden=false;$('#st').textContent='어디로 무엇을 하고 싶은지 적어 주세요';return}
   $('#go').disabled=true;$('#res').innerHTML='';$('#dev').innerHTML='';$('#tabs').hidden=true;$('#prog').hidden=false;
-  const r=await fetch('run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,interests,mode,request:$('#req').value,date:$('#date').value,companions:$('#comp').value})});
+  const r=await fetch('run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,interests,mode,lang,request:$('#req').value,date:$('#date').value,companions:$('#comp').value})});
   const j=await r.json();if(!r.ok){$('#st').textContent=j.error;$('#go').disabled=false;return}
   const poll=async()=>{const s=await (await fetch('status?job='+j.job)).json();const log=s.lines.join('\n');
     let k=0;STEPS.forEach((x,i)=>{if(log.includes(x[0]))k=i+1});if(s.done&&s.ok)k=5;
