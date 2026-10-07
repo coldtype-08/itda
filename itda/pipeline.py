@@ -17,7 +17,7 @@ from . import prompts
 from .config import Config
 from .guard import Audit, PathGuard
 from .ingest import Doc, load_docs
-from .llm import LLM
+from .llm import LLM, LLMAuthError
 
 
 def _progress(msg: str) -> None:
@@ -49,6 +49,8 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
                                 mock=lambda: {"relevant": True, "source_type": "other", "reliability": "medium",
                                               "doc_date": None, "contains_instructions_to_agent": bool(doc.instruction_hints),
                                               "claims": []})
+        except LLMAuthError:
+            raise
         except Exception as e:  # one bad document must not sink the run
             out = {"relevant": False, "error": str(e), "claims": []}
         # Deterministic signal wins over the model: hinted docs are always treated as untrusted input.
@@ -69,6 +71,8 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
                                                         "contains_instructions_to_agent": bool(d.instruction_hints)}
                                                        for d in chunk]})
             got = {r.get("id"): r for r in (out.get("docs", []) if isinstance(out, dict) else out)}
+        except LLMAuthError:
+            raise
         except Exception as e:  # fall back to per-document calls
             _progress(f"  배치 분류 실패 → 문서별로 재시도 ({e})")
             got = {}
@@ -128,6 +132,37 @@ def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict) -> dict:
                          mock=lambda: {"title": "ItDA draft (mock)", "summary": "", "itinerary": [],
                                        "dietary_plan": [], "interpretation": [], "uncertainties": [],
                                        "approvals_needed": [], "not_done": []})
+
+
+def ground_check(cfg: Config, llm: LLM, plan: dict, resolved: dict, docs: list[Doc], triaged: list[dict]) -> tuple[dict, list]:
+    """Second pass: drop claims the sources do not support (fabricated history etc.)."""
+    used = {t["id"] for t in triaged if t.get("relevant")}
+    sources = "\n\n".join(f"<<< {d.id} {d.path}\n{_clip(d.text, 2000)}\n>>>" for d in docs if d.id in used)
+    user = prompts.GROUND_USER.format(plan=json.dumps(plan, ensure_ascii=False, indent=1),
+                                      resolved=json.dumps(resolved, ensure_ascii=False), sources=sources)
+    try:
+        out = llm.chat_json(prompts.GROUND_SYSTEM, user, cfg.model_main, "ground",
+                            mock=lambda: {"plan": plan, "removed": []})
+    except LLMAuthError:
+        raise
+    except Exception as e:  # keep the unchecked draft rather than failing the run
+        _progress(f"  근거 검사 실패, 원본 초안 유지 ({e})")
+        return plan, []
+    new = out.get("plan") if isinstance(out, dict) else None
+    if not isinstance(new, dict) or "itinerary" not in new:
+        return plan, []
+    return new, out.get("removed", [])
+
+
+def _cited(plan: dict, resolved: dict) -> set:
+    ids = set()
+    for sec in ("itinerary", "dietary_plan", "interpretation"):
+        for it in plan.get(sec, []) or []:
+            ids.update(it.get("evidence") or [])
+    for sec in ("facts", "people", "rules"):
+        for it in resolved.get(sec, []) or []:
+            ids.update(it.get("evidence") or [])
+    return ids
 
 
 def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]) -> str:
@@ -191,6 +226,12 @@ def run(cfg: Config) -> dict:
               f"무시한 지시 {len(resolved.get('untrusted_instructions', []))}건")
     _progress(f"④ 종합 시작 ({cfg.model_main})")
     plan = synthesize(cfg, llm, task, resolved)
+    _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
+    plan, removed = ground_check(cfg, llm, plan, resolved, docs, triaged)
+    _progress(f"   근거 없는 문장 {len(removed)}건 제거")
+    # Consistency: a source cited as evidence cannot also be listed as excluded.
+    cited = _cited(plan, resolved)
+    resolved["excluded_sources"] = [x for x in resolved.get("excluded_sources", []) if x.get("doc") not in cited]
 
     result = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -199,6 +240,7 @@ def run(cfg: Config) -> dict:
         "visit_date": visit_date,
         "plan": plan,
         "resolved": resolved,
+        "grounding_removed": removed,
         "sources": [{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",
                                             "doc_date", "contains_instructions_to_agent")} for t in triaged],
     }

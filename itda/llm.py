@@ -23,6 +23,10 @@ class LLMError(RuntimeError):
     pass
 
 
+class LLMAuthError(LLMError):
+    """401/403: wrong or missing credentials. Never retried or swallowed."""
+
+
 class LLM:
     def __init__(self, cfg: Config, audit: Audit) -> None:
         self.cfg = cfg
@@ -56,7 +60,9 @@ class LLM:
             except urllib.error.HTTPError as e:
                 last = e
                 self.audit.log("llm_call", label=label, model=model, ok=False, status=e.code)
-                if e.code in (400, 401, 403, 404):
+                if e.code in (401, 403):
+                    raise LLMAuthError(f"{e.code} from {self.cfg.llm_base_url} — API 키/권한을 확인하세요") from e
+                if e.code in (400, 404):
                     break  # not retryable
             except (urllib.error.URLError, TimeoutError, KeyError, json.JSONDecodeError) as e:
                 last = e
