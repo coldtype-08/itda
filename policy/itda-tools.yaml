@@ -48,7 +48,7 @@ network_policies:
         protocol: rest
         enforcement: enforce
         rules:
-          - allow: { method: GET, path: "/v1/search/**" }   # search only, no other Naver APIs
+          - allow: { method: GET, path: "/v1/search/**" }   # search only; no other Naver APIs
     binaries: *py
   itda_brave_search:
     name: itda-brave-search

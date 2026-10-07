@@ -53,7 +53,7 @@ TODO(데모 담당): 데모 URL 또는 단계별 확인 방법
 
 | 권한 | 설정 | 이유 |
 |---|---|---|
-| 네트워크 egress | 기본 거부. 수집 도구용 도메인만 허용 ([`policy/itda-tools.yaml`](policy/itda-tools.yaml)): 위키백과·Open-Meteo 읽기 전용, Tavily `POST /search`만, 공공데이터포털은 관광공사·기상청 경로만 | 자료 속 "외부 업로드" 지시(prompt injection)가 실행돼도 나갈 곳이 없게 |
+| 네트워크 egress | 기본 거부. 수집 도구용 도메인만 허용 ([`policy/itda-tools.yaml`](policy/itda-tools.yaml)): 위키백과·Open-Meteo 읽기 전용, Tavily `POST /search`만, 네이버는 `/v1/search/**`만, Brave는 웹 검색만, 공공데이터포털은 관광공사·기상청 경로만 | 자료 속 "외부 업로드" 지시(prompt injection)가 실행돼도 나갈 곳이 없게 |
 | 모델 추론 | `inference.local` 라우팅만 | API 키는 호스트 게이트웨이에만 보관, 샌드박스에는 키가 없음 |
 | 파일 읽기 | 업로드한 `TASK.md`, `input/`만 존재 | `restricted/`, `secrets/`는 샌드박스에 올리지 않음 (데이터 최소화) |
 | 시스템 경로 | `/usr`, `/etc` 등 읽기 전용, 그 외 Landlock으로 차단 | 변조·권한 상승 방지 |
@@ -69,7 +69,7 @@ TODO(데모 담당): 데모 URL 또는 단계별 확인 방법
 | 위키백과 REST API | 실존 장소·시대의 일반 배경 | GET, `ko/en.wikipedia.org` |
 | Open-Meteo | 방문일 일기예보 | GET, `api.open-meteo.com`, `geocoding-api.open-meteo.com` |
 | Tavily (키 있을 때) | 일반 웹 검색 | `POST api.tavily.com/search` |
-| 네이버 검색 API (키 있을 때) | 국내 장소·지식백과·뉴스·블로그 | `GET openapi.naver.com/v1/search/**` |
-| Brave Search (키 있을 때) | 해외·영어 웹 검색 | `GET api.search.brave.com/res/v1/web/search` |
 | 공공데이터포털 (키 있을 때) | 관광공사 국문/영문 관광정보 | GET `apis.data.go.kr/B551011/**` |
+| 네이버 검색 API (키 있을 때) | 지도 등록 장소(이름·주소), 지식백과, 뉴스, 블로그 요약(신뢰도 낮음). 지도 리뷰·블로그 본문은 사용하지 않음(크롤링 금지) | GET `openapi.naver.com/v1/search/**` |
+| Brave Search (키 있을 때) | 일반 웹 검색 (Tavily 대체) | GET `api.search.brave.com/res/v1/web/search` |
 | (선택) L40S 로컬 NIM | 개인정보가 포함된 단계의 로컬 추론 | `host.openshell.internal:8000` 한정 |

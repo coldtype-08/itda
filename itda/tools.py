@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import urllib.parse
 import urllib.request
 from typing import Callable
@@ -27,6 +26,7 @@ ALLOWED_HOSTS = {
     "openapi.naver.com",
     "api.search.brave.com",
 }
+NAVER_KINDS = ("local", "blog", "encyc", "news", "webkr")
 UA = "ItDA-hackathon-agent/0.1 (K-culture course drafts)"
 TOUR_BASE = os.environ.get("ITDA_TOUR_BASE", "https://apis.data.go.kr/B551011")
 
@@ -56,10 +56,10 @@ class Tools:
         if os.environ.get("DATA_GO_KR_KEY"):
             out["tour"] = "한국관광공사 관광정보 키워드 검색 (공공데이터포털)"
         if os.environ.get("NAVER_CLIENT_ID") and os.environ.get("NAVER_CLIENT_SECRET"):
-            out["naver"] = ("네이버 검색. kind=local(장소·주소) | encyc(지식백과) | news(최근 소식) | blog(후기, 신뢰 낮음). "
-                            "국내 장소·한국어 정보에 우선 사용")
+            out["naver"] = ("네이버 검색 API. kind=local(지도 등록 장소: 이름·주소·분류), blog(블로그 요약, 신뢰도 낮음), "
+                            "encyc(지식백과), news(뉴스). 지도 리뷰·블로그 본문은 제공되지 않음")
         if os.environ.get("BRAVE_API_KEY"):
-            out["brave"] = "Brave 웹 검색 (해외·영어 자료)"
+            out["brave"] = "일반 웹 검색 (Brave Search)"
         return out
 
     def _http(self, url: str, body: dict | None = None, headers: dict | None = None) -> dict:
@@ -131,24 +131,29 @@ class Tools:
         return {"keyword": keyword, "results": [{"title": i.get("title"), "addr": i.get("addr1"),
                                                  "contentid": i.get("contentid")} for i in items[:5]]}
 
-    def naver(self, query: str, kind: str = "local") -> dict:
-        kind = kind if kind in ("local", "encyc", "news", "blog", "webkr") else "local"
-        q = urllib.parse.quote(query)
-        r = self._http(f"https://openapi.naver.com/v1/search/{kind}.json?query={q}&display=5",
+    def naver(self, query: str, kind: str = "local", display: int = 5) -> dict:
+        kind = kind if kind in NAVER_KINDS else "local"
+        qs = urllib.parse.urlencode({"query": query, "display": max(1, min(int(display), 5 if kind == "local" else 10))})
+        r = self._http(f"https://openapi.naver.com/v1/search/{kind}.json?{qs}",
                        headers={"X-Naver-Client-Id": os.environ["NAVER_CLIENT_ID"],
                                 "X-Naver-Client-Secret": os.environ["NAVER_CLIENT_SECRET"]})
-        strip = lambda t: re.sub(r"<[^>]+>", "", t or "")
-        items = [{"title": strip(i.get("title")), "desc": strip(i.get("description"))[:300],
-                  "address": i.get("roadAddress") or i.get("address"), "category": i.get("category"),
-                  "date": i.get("postdate") or i.get("pubDate"), "link": i.get("link")}
-                 for i in r.get("items", [])]
-        return {"query": query, "kind": kind, "results": items}
+        keep = ("title", "description", "link", "postdate", "pubDate", "category", "address", "roadAddress",
+                "mapx", "mapy", "bloggername")
+        items = [{k: _strip_tags(str(i[k])) for k in keep if i.get(k)} for i in r.get("items", [])]
+        return {"query": query, "kind": kind, "results": items,
+                "note": "블로그·카페 결과는 개인 의견이며 협찬·체험단 글일 수 있음" if kind == "blog" else ""}
 
     def brave(self, query: str) -> dict:
-        q = urllib.parse.quote(query)
-        r = self._http(f"https://api.search.brave.com/res/v1/web/search?q={q}&count=5",
+        qs = urllib.parse.urlencode({"q": query, "count": 5, "country": "KR", "search_lang": "ko"})
+        r = self._http(f"https://api.search.brave.com/res/v1/web/search?{qs}",
                        headers={"X-Subscription-Token": os.environ["BRAVE_API_KEY"]})
         return {"query": query, "results": [{"title": x.get("title"), "url": x.get("url"),
-                                             "desc": re.sub(r"<[^>]+>", "", x.get("description") or "")[:400],
+                                             "description": _strip_tags(x.get("description") or "")[:600],
                                              "age": x.get("age")}
-                                            for x in (r.get("web") or {}).get("results", [])]}
+                                            for x in (r.get("web") or {}).get("results", [])[:5]]}
+
+
+def _strip_tags(s: str) -> str:
+    import html
+    import re
+    return html.unescape(re.sub(r"<[^>]+>", "", s))
