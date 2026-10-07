@@ -1,0 +1,42 @@
+# ItDA collection tools: the ONLY external hosts the sandbox may reach (besides inference).
+# Read-only everywhere except Tavily's search endpoint, which is POST /search only.
+# Apply (dry-run first):
+#   nemo-deepagents itda-hack policy add --from-file policy/itda-tools.yaml --dry-run
+#   nemo-deepagents itda-hack policy add --from-file policy/itda-tools.yaml --yes
+network_policies:
+  itda_wikipedia:
+    name: itda-wikipedia
+    endpoints:
+      - { host: ko.wikipedia.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+      - { host: en.wikipedia.org, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: &py
+      - path: /usr/bin/python3
+      - path: /usr/bin/python3.*
+      - path: /usr/local/bin/python3*
+  itda_open_meteo:
+    name: itda-open-meteo
+    endpoints:
+      - { host: api.open-meteo.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+      - { host: geocoding-api.open-meteo.com, port: 443, protocol: rest, enforcement: enforce, access: read-only }
+    binaries: *py
+  itda_tavily:
+    name: itda-tavily
+    endpoints:
+      - host: api.tavily.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: /search }
+    binaries: *py
+  itda_data_go_kr:
+    name: itda-data-go-kr
+    endpoints:
+      - host: apis.data.go.kr
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/B551011/**" }   # 한국관광공사 only
+          - allow: { method: GET, path: "/1360000/**" }   # 기상청
+    binaries: *py

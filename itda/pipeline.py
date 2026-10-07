@@ -16,8 +16,9 @@ from datetime import datetime, timezone
 from . import prompts
 from .config import Config
 from .guard import Audit, PathGuard
-from .ingest import Doc, load_docs
+from .ingest import _INSTRUCTION_RE, Doc, load_docs
 from .llm import LLM, LLMAuthError
+from .tools import Tools
 
 
 def _progress(msg: str) -> None:
@@ -113,13 +114,90 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
     return results
 
 
+RESOLVE_GROUPS = [
+    ("운영·동선", ["operating_hours", "route_access", "approval_policy", "other"]),
+    ("역사", ["history", "etiquette"]),
+    ("음식·인물", ["food_dietary", "people"]),
+]
+
+
 def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: list[dict]) -> dict:
+    """Topic-specialised verifier agents run in parallel, then merge."""
     user = prompts.RESOLVE_USER.format(
         task=task, visit_date=visit_date or "미상",
         triage=json.dumps(triaged, ensure_ascii=False, indent=1))
-    return llm.chat_json(prompts.RESOLVE_SYSTEM, user, cfg.model_main, "resolve",
-                         mock=lambda: {"visit_date": visit_date, "facts": [], "people": [], "rules": [],
-                                       "excluded_sources": [], "untrusted_instructions": [], "open_questions": []})
+    empty = {"visit_date": visit_date, "facts": [], "people": [], "rules": [],
+             "excluded_sources": [], "untrusted_instructions": [], "open_questions": []}
+
+    def one(group) -> dict:
+        name, topics = group
+        system = prompts.RESOLVE_SYSTEM + prompts.RESOLVE_FOCUS.format(name=name, topics=", ".join(topics))
+        out = llm.chat_json(system, user, cfg.model_main, f"resolve:{name}", mock=lambda: dict(empty))
+        _progress(f"   검증[{name}] 사실 {len(out.get('facts', []))}건")
+        return out
+
+    with ThreadPoolExecutor(max_workers=len(RESOLVE_GROUPS)) as pool:
+        parts = list(pool.map(one, RESOLVE_GROUPS))
+
+    merged = dict(empty)
+    merged["visit_date"] = next((p.get("visit_date") for p in parts if p.get("visit_date")), visit_date)
+    for key in ("facts", "people", "rules", "open_questions"):
+        merged[key] = [x for p in parts for x in (p.get(key) or [])]
+    by_doc = {}
+    for p in parts:
+        for x in p.get("untrusted_instructions") or []:
+            by_doc.setdefault(x.get("doc"), x)
+    merged["untrusted_instructions"] = list(by_doc.values())
+    # A source is excluded only if every verifier excluded it.
+    excluded_sets = [{x.get("doc"): x for x in (p.get("excluded_sources") or [])} for p in parts]
+    common = set.intersection(*(set(e) for e in excluded_sets)) if excluded_sets else set()
+    merged["excluded_sources"] = [excluded_sets[0][d] for d in sorted(common)]
+    return merged
+
+
+def plan_agent(cfg: Config, llm: LLM, task: str, docs: list[Doc], tools: Tools) -> dict:
+    avail = tools.available()
+    tool_desc = "\n".join(f"- {k}: {v} 인자 {prompts.TOOL_ARGS[k]}" for k, v in avail.items())
+    listing = "\n".join(f"- {d.path}: {d.text[:150].replace(chr(10), ' ')}" for d in docs)
+    user = prompts.PLAN_USER.format(task=task, visitor_type=cfg.visitor_type, interests=", ".join(cfg.interests),
+                                    language=cfg.language, tools=tool_desc, docs=listing)
+    try:
+        return llm.chat_json(prompts.PLAN_SYSTEM, user, cfg.model_main, "plan",
+                             mock=lambda: {"goal": "mock", "places": [], "checks": [], "tool_calls": [
+                                 {"tool": "wiki", "args": {"query": "조선", "lang": "ko"}, "why": "mock"},
+                                 {"tool": "send_email", "args": {}, "why": "should be blocked"}]})
+    except LLMAuthError:
+        raise
+    except Exception as e:
+        _progress(f"  계획 실패, 로컬 자료만 사용 ({e})")
+        return {"goal": task[:200], "tool_calls": [], "error": str(e)}
+
+
+def run_tools(plan: dict, tools: Tools, visit_date: str | None, max_calls: int = 6) -> tuple[list[Doc], list[dict]]:
+    calls = [c for c in (plan.get("tool_calls") or []) if isinstance(c, dict)][:max_calls]
+    for c in calls:
+        if c.get("tool") == "weather":
+            c.setdefault("args", {}).setdefault("date", visit_date)
+
+    def one(c: dict) -> dict:
+        args = c.get("args") if isinstance(c.get("args"), dict) else {}
+        r = tools.call(str(c.get("tool")), **args)
+        mark = "✓" if r.get("ok") else "✗"
+        _progress(f"   도구 {mark} {c.get('tool')} {json.dumps(args, ensure_ascii=False)[:80]}"
+                  + ("" if r.get("ok") else f" → {r.get('error')}"))
+        return {"call": c, "result": r}
+
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        log = list(pool.map(one, calls))
+    ext = []
+    for i, item in enumerate(x for x in log if x["result"].get("ok")):
+        text = json.dumps(item["result"], ensure_ascii=False)[:4000]
+        args = item["call"].get("args") or {}
+        label = args.get("query") or args.get("keyword") or args.get("place") or ""
+        ext.append(Doc(id=f"W{i + 1:02d}", path=f"external/{item['call']['tool']}/{label}", text=text,
+                       bytes=len(text.encode()),
+                       instruction_hints=sorted({m.group(0) for m in _INSTRUCTION_RE.finditer(text)})))
+    return ext, log
 
 
 def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict) -> dict:
@@ -217,10 +295,18 @@ def run(cfg: Config) -> dict:
     audit.log("start", docs=len(docs), visit_date=visit_date, visitor_type=cfg.visitor_type,
               interests=cfg.interests, model_main=cfg.model_main, model_fast=cfg.model_fast)
 
-    _progress(f"① 수집: 문서 {len(docs)}개, 방문일 {visit_date}, 렌즈 {cfg.visitor_type}/{','.join(cfg.interests)}")
-    _progress(f"② 분류 시작 ({cfg.model_fast}, 동시 {cfg.concurrency}개)")
-    triaged = triage(cfg, llm, task, visit_date, docs)
-    _progress(f"③ 검증 시작 ({cfg.model_main})")
+    tools = Tools(audit)
+    _progress(f"① 수집: 로컬 문서 {len(docs)}개, 방문일 {visit_date}, 렌즈 {cfg.visitor_type}/{','.join(cfg.interests)}")
+    _progress(f"② 계획 에이전트 + 로컬 분류 병렬 시작 (도구: {', '.join(tools.available())})")
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        f_local = pool.submit(triage, cfg, llm, task, visit_date, docs)
+        agent_plan = plan_agent(cfg, llm, task, docs, tools)
+        _progress(f"   계획: {agent_plan.get('goal', '')[:80]} / 도구 호출 {len(agent_plan.get('tool_calls') or [])}건")
+        ext_docs, tool_log = run_tools(agent_plan, tools, visit_date)
+        ext_triaged = triage(cfg, llm, task, visit_date, ext_docs) if ext_docs else []
+        triaged = f_local.result() + ext_triaged
+    docs = docs + ext_docs
+    _progress(f"③ 검증 에이전트 {len(RESOLVE_GROUPS)}개 병렬 시작 ({cfg.model_main})")
     resolved = resolve(cfg, llm, task, visit_date, triaged)
     _progress(f"   사실 {len(resolved.get('facts', []))}건, 제외 {len(resolved.get('excluded_sources', []))}건, "
               f"무시한 지시 {len(resolved.get('untrusted_instructions', []))}건")
@@ -241,6 +327,9 @@ def run(cfg: Config) -> dict:
         "plan": plan,
         "resolved": resolved,
         "grounding_removed": removed,
+        "agent_plan": agent_plan,
+        "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
+                        "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
         "sources": [{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",
                                             "doc_date", "contains_instructions_to_agent")} for t in triaged],
     }

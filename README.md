@@ -7,8 +7,10 @@ NVIDIA Nemotron(NIM 엔드포인트) + NemoClaw + OpenShell 위에서 동작한�
 ## 구조
 
 ```
-TASK + 렌즈 ──▶ ① 수집(PathGuard: input/만) ──▶ ② 분류(문서별, 병렬)
-              ──▶ ③ 검증(최신성·출처 신뢰도·동명이인·불확실성) ──▶ ④ 종합(렌즈별 초안)
+TASK + 렌즈 ──▶ ① 수집(PathGuard: input/만)
+              ──▶ ② 계획 에이전트(도구 선택) ∥ 로컬 자료 분류   → 허용 도구만 실행(위키·날씨·검색·관광)
+              ──▶ ③ 검증 에이전트 3개 병렬(운영·동선 / 역사 / 음식·인물)
+              ──▶ ④ 종합(렌즈별 초안) ──▶ ⑤ 근거 검사(근거 없는 문장 제거)
               ──▶ output/ (course_draft.md · itda_result.json · audit.json)
 ```
 
@@ -51,17 +53,21 @@ TODO(데모 담당): 데모 URL 또는 단계별 확인 방법
 
 | 권한 | 설정 | 이유 |
 |---|---|---|
-| 네트워크 egress | 허용 목록 없음 (기본 거부) | 자료 속 "외부 업로드" 지시(prompt injection)가 실행돼도 나갈 곳이 없게 |
+| 네트워크 egress | 기본 거부. 수집 도구용 도메인만 허용 ([`policy/itda-tools.yaml`](policy/itda-tools.yaml)): 위키백과·Open-Meteo 읽기 전용, Tavily `POST /search`만, 공공데이터포털은 관광공사·기상청 경로만 | 자료 속 "외부 업로드" 지시(prompt injection)가 실행돼도 나갈 곳이 없게 |
 | 모델 추론 | `inference.local` 라우팅만 | API 키는 호스트 게이트웨이에만 보관, 샌드박스에는 키가 없음 |
 | 파일 읽기 | 업로드한 `TASK.md`, `input/`만 존재 | `restricted/`, `secrets/`는 샌드박스에 올리지 않음 (데이터 최소화) |
 | 시스템 경로 | `/usr`, `/etc` 등 읽기 전용, 그 외 Landlock으로 차단 | 변조·권한 상승 방지 |
 | 프로세스 | `sandbox` 사용자, root 불가 | 권한 상승 방지 |
 | 애플리케이션 계층 | `PathGuard`: 허용 루트 밖, `restricted`/`secrets`/심볼릭 링크 우회 차단 + 감사 로그 | OpenShell과 이중 방어 |
-| 행동 | 발송·예약·결제 도구 없음 | `approval: draft_only` 준수 |
+| 행동 | 발송·예약·결제 도구 없음. 계획 에이전트가 목록 밖 도구를 요청하면 차단·기록 (`tool_blocked`) | `approval: draft_only` 준수, 승인되지 않은 툴콜 차단 |
 
 ## 외부 API / 서비스
 
 | 서비스 | 용도 | 허용 범위 |
 |---|---|---|
 | NVIDIA build.nvidia.com (NIM 엔드포인트) | Nemotron 3 Super/Ultra 추론 | `POST /v1/chat/completions`, OpenShell 게이트웨이 경유 |
+| 위키백과 REST API | 실존 장소·시대의 일반 배경 | GET, `ko/en.wikipedia.org` |
+| Open-Meteo | 방문일 일기예보 | GET, `api.open-meteo.com`, `geocoding-api.open-meteo.com` |
+| Tavily (키 있을 때) | 일반 웹 검색 | `POST api.tavily.com/search` |
+| 공공데이터포털 (키 있을 때) | 관광공사 국문/영문 관광정보 | GET `apis.data.go.kr/B551011/**` |
 | (선택) L40S 로컬 NIM | 개인정보가 포함된 단계의 로컬 추론 | `host.openshell.internal:8000` 한정 |
