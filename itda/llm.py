@@ -48,13 +48,16 @@ class LLM:
         return self.cfg.llm_base_url
 
     def _request(self, body: dict) -> dict:
-        req = urllib.request.Request(
-            self._base(body["model"]).rstrip("/") + "/chat/completions",
-            data=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json",
-                     "Authorization": f"Bearer {self.cfg.llm_api_key}"},
-            method="POST",
-        )
+        base = self._base(body["model"])
+        headers = {"Content-Type": "application/json"}
+        # Only the main endpoint gets the (placeholder) credential. Sending it to the local NIM made
+        # OpenShell refuse the request: "credential is not authorized for the request endpoint".
+        if base == self.cfg.llm_base_url:
+            headers["Authorization"] = f"Bearer {self.cfg.llm_api_key}"
+        elif os.environ.get("ITDA_SMALL_API_KEY"):
+            headers["Authorization"] = f"Bearer {os.environ['ITDA_SMALL_API_KEY']}"
+        req = urllib.request.Request(base.rstrip("/") + "/chat/completions",
+                                     data=json.dumps(body).encode(), headers=headers, method="POST")
         with urllib.request.urlopen(req, timeout=self.cfg.llm_timeout) as resp:
             return json.loads(resp.read())
 
