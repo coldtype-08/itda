@@ -576,6 +576,21 @@ def run(cfg: Config) -> dict:
     _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
     plan, removed = ground_check(cfg, llm, plan, resolved, docs, triaged)
     _progress(f"   근거 없는 문장 {len(removed)}건 제거")
+    # Damaged / OCR / estimated sources: every candidate year must survive into the draft.
+    by_id = {d.id: d for d in docs}
+    blob = json.dumps(plan, ensure_ascii=False)
+    for t in triaged:
+        d = by_id.get(t["id"])
+        if not d or not t.get("relevant") or t.get("trust") == "ignore":
+            continue
+        shaky = t.get("integrity") in ("ocr_uncertain", "damaged", "estimated") or re.search(
+            r"OCR|판독|훼손|추정|illegible|damaged", d.text, re.I)
+        if shaky and len(d.years) >= 2 and not all(y in blob for y in d.years):
+            ys = " / ".join(d.years)
+            plan.setdefault("uncertainties", []).append(
+                (f"`{d.path}`: 판독·훼손으로 연도 확정 불가 — 후보 {ys}" if cfg.language == "ko" else
+                 f"`{d.path}`: year cannot be confirmed (damaged/OCR) — candidates {ys}"))
+            audit.log("uncertainty_kept", doc=d.path, years=d.years)
     if not plan.get("approvals_needed"):
         ko = cfg.language == "ko"
         plan["approvals_needed"] = [
