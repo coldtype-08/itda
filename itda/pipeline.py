@@ -597,6 +597,24 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
     return "\n".join(out) + "\n"
 
 
+def _request_text(task: str) -> str:
+    """The user's own words: for web requests drop the boilerplate we append to TASK.md."""
+    return re.split(r"\n\n(주어진 자료 폴더를 근거로|실제 장소에 대한 요청이다)", task)[0]
+
+
+def _alternatives(cfg: Config, llm: LLM, task: str) -> list[str]:
+    """Two or three Korea-related requests the user could make instead (best effort)."""
+    try:
+        out = llm.chat_json("잇다는 한국 안의 장소에서 문화·역사를 경험하도록 돕는 에이전트다. 사용자의 범위 밖 요청과 이어지는, "
+                            "잇다가 도울 수 있는 한국 관련 요청 3개를 만든다. 반드시 {\"alternatives\": [str, str, str]} JSON 하나만 출력한다.",
+                            _request_text(task)[:500], cfg.model_fast, "scope:alternatives",
+                            mock=lambda: {"alternatives": ["서울 고궁 반나절 코스", "경주 역사 여행 1박 2일"]})
+        alts = out.get("alternatives", []) if isinstance(out, dict) else []
+        return [a for a in alts if isinstance(a, str)][:3]
+    except Exception:  # noqa: BLE001
+        return ["서울 고궁과 전통시장 반나절 코스", "경주 역사 여행 1박 2일", "외국인 친구와 즐기는 한국 음식 문화 코스"]
+
+
 def _out_of_scope(cfg: Config, guard: PathGuard, audit: Audit, task: str, agent_plan: dict) -> dict:
     """Stop before any tool call or synthesis: ItDA does not invent itineraries outside its domain."""
     reason = agent_plan.get("scope_reason") or "잇다는 한국의 문화·역사·지역 경험을 돕는 에이전트예요."
@@ -647,6 +665,13 @@ def run(cfg: Config) -> dict:
             _progress("   상황 신호: " + ", ".join(f"{r.icon}{r.label}" for r in rules))
         signals = "\n".join(f"- {r.icon} {r.label}: " + "; ".join(n for _, n, _ in r.needs)
                              + (f" (확인 도구: {', '.join(t for t, _ in r.tools)})" if r.tools else "") for r in rules)
+        code_scope, code_reason = context.scope_check(_request_text(task))
+        if code_scope is False:  # clear-cut: decided in code, no model call spent
+            f_local.cancel()
+            agent_plan = {"in_scope": False, "scope_reason": code_reason, "alternatives": [], "decided_by": "code rule"}
+            agent_plan["alternatives"] = _alternatives(cfg, llm, task)
+            _save_transcript(guard, llm)
+            return _out_of_scope(cfg, guard, audit, task, agent_plan)
         agent_plan = plan_agent(cfg, llm, task, docs, tools, signals)
         if agent_plan.get("in_scope") is False:
             f_local.cancel()

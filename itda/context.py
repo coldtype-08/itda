@@ -158,7 +158,22 @@ _ABROAD = (r"스페인|바르셀로나|마드리드|프랑스|파리|이탈리�
 _KOREA = (r"한국|서울|부산|인천|대구|대전|광주|울산|세종|경기|강원|충청|전라|경상|제주|경주|전주|수원|안동|여수|강릉|속초|"
           r"고궁|궁|사찰|절|한옥|시장|해담|성진정|국내")
 _TRAVEL = r"여행|여행지|추천|가볼|일정|코스|관광|투어|명소"
-_OFFTOPIC = r"주식|코인|비트코인|투자|코드|코딩|프로그램\s*짜|숙제|과제\s*대신|레포트\s*대신|로또"
+_OFFTOPIC = (r"주식|코인|비트코인|투자|코드|코딩|프로그램\s*짜|파이썬|python|자바스크립트|javascript|자바\b|java\b|"
+             r"알고리즘|피보나치|정렬\s*함수|함수\s*(짜|만들)|SQL|쿼리\s*짜|엑셀\s*수식|숙제|과제\s*대신|레포트\s*대신|"
+             r"로또|수학\s*문제|번역해\s*줘|이메일\s*(써|작성)|자기소개서")
+
+
+def scope_check(task: str) -> tuple[bool | None, str]:
+    """(False, reason) when the request is clearly outside ItDA's domain; (None, '') otherwise.
+    Clear cases are decided here in code; borderline ones are left to the planner."""
+    abroad = re.findall(_ABROAD, task)
+    if abroad and re.search(_TRAVEL, task) and not re.search(_KOREA, task):
+        return False, (f"{', '.join(sorted(set(abroad)))}처럼 한국이 아닌 곳의 여행 요청이에요. "
+                       "잇다는 한국 안의 장소에서 문화·역사를 경험하도록 돕는 에이전트라, 자료 없이 지어낸 일정을 드리지 않아요.")
+    korean_topic = _KOREA + r"|문화|역사|관광|여행|유산|축제|전통|조선|고려|신라|백제|가야|삼국|발해|한글|한식|한복|국악|K-?컬처|K-?pop|케이팝"
+    if re.search(_OFFTOPIC, task, re.I) and not re.search(korean_topic, task, re.I):
+        return False, "한국 문화·역사·여행과 관련 없는 요청이에요. 잇다는 한국의 문화·역사·지역 경험을 돕는 에이전트예요."
+    return None, ""
 
 
 def scope_hint(task: str) -> str:
