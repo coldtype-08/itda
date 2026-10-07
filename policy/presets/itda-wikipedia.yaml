@@ -22,6 +22,5 @@ network_policies:
           - allow: { method: GET, path: "/w/rest.php/v1/search/page" }
           - allow: { method: GET, path: "/api/rest_v1/page/summary/**" }
     binaries:
-      - { path: /usr/bin/python3 }
-      - { path: /usr/bin/python3.12 }
-      - { path: /usr/local/bin/python3 }
+      - { path: /opt/venv/bin/python3 }
+      - { path: /opt/venv/bin/python }

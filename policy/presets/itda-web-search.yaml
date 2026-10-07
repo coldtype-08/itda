@@ -20,6 +20,5 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/res/v1/web/search" }
     binaries:
-      - { path: /usr/bin/python3 }
-      - { path: /usr/bin/python3.12 }
-      - { path: /usr/local/bin/python3 }
+      - { path: /opt/venv/bin/python3 }
+      - { path: /opt/venv/bin/python }

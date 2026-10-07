@@ -1,0 +1,21 @@
+# Local Nemotron Nano NIM on the L40S (host port 8000). Replaces the broad built-in
+# 'local-inference' preset (4 ports, GET/POST /**) with exactly the two calls ItDA makes.
+#   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-local-nano.yaml --dry-run
+preset:
+  name: itda-local-nano
+  description: "Local Nemotron Nano NIM on the L40S: chat completions + model list only"
+network_policies:
+  itda_local_nano:
+    name: itda-local-nano
+    endpoints:
+      - host: host.openshell.internal
+        port: 8000
+        protocol: rest
+        enforcement: enforce
+        allowed_ips: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+        rules:
+          - allow: { method: POST, path: "/v1/chat/completions" }
+          - allow: { method: GET, path: "/v1/models" }
+    binaries:
+      - { path: /opt/venv/bin/python3 }
+      - { path: /opt/venv/bin/python }

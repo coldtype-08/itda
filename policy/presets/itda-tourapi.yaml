@@ -15,6 +15,5 @@ network_policies:
           - allow: { method: GET, path: "/B551011/**" }
           - allow: { method: GET, path: "/1360000/**" }
     binaries:
-      - { path: /usr/bin/python3 }
-      - { path: /usr/bin/python3.12 }
-      - { path: /usr/local/bin/python3 }
+      - { path: /opt/venv/bin/python3 }
+      - { path: /opt/venv/bin/python }
