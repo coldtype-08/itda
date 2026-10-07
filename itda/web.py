@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -97,6 +98,8 @@ def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
     args = ["--visitor", visitor, "--interests", ",".join(interests)]
     if req and req.get("lang") in ("ko", "en", "ja", "zh"):
         args += ["--lang", req["lang"]]
+    elif req and visitor != "foreign" and re.search(r"[가-힣]", (req.get("request") or "") + (req.get("followup") or "")):
+        args += ["--lang", "ko"]  # a question typed in Korean gets a Korean answer unless 'foreign' was chosen
     extra_env = {}
     task, inp = CHALLENGE_TASK, CHALLENGE_INPUT
     req = req or {}
@@ -327,7 +330,8 @@ function renderUser(d){
   const used=(R.sources||[]).filter(s=>s.trust!=='ignore').length;
   let h=`<div class="hero"><h2>${esc(P.title)}</h2><div>${esc(P.summary)}</div><div class="badges"><span class="b r">초안 · 예약/연락하지 않음</span>${R.visit_date?`<span class="b">📅 ${esc(R.visit_date)}</span>`:''}<span class="b">${{foreign:'🌏 해외 방문객',korean:'🇰🇷 한국인'}[R.lens?.visitor_type]||''}</span></div>
    <div class="trust"><div><b>${used}/${(R.sources||[]).length}</b>사용한 자료</div><div><b>${conf}</b>교차 확인된 정보</div><div><b>${(V.untrusted_instructions||[]).length}</b>무시한 의심 지시</div></div></div>`;
-  if(P.answer)h+=`<div class="show" style="border-color:var(--acc2)"><div class="mut small">💬 질문에 대한 답</div><div style="font-size:18px;margin-top:4px">${esc(P.answer)}</div></div>`;
+  const VD={supported:['✅ 자료로 확인됨','g'],contradicted:['❌ 자료가 반대 내용을 말함','r'],no_evidence:['❔ 자료로 확인되지 않음',''],uncertain:['⚠️ 자료끼리 엇갈리거나 불확실','']}[P.verdict];
+  if(P.answer)h+=`<div class="show" style="border-color:var(--acc2)"><div class="mut small">💬 질문에 대한 답</div>${VD?`<div style="margin:6px 0"><span class="b ${VD[1]}" style="font-size:15px;padding:4px 12px">${VD[0]}</span></div>`:''}<div style="font-size:18px;margin-top:4px">${esc(P.answer)}</div></div>`;
   if((P.changes||[]).length)h+=`<div class="card"><b>이전 초안 대비 바뀐 점</b><ul>${P.changes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
   const TL={nearby:'🍚 주변 식당·장소',accessibility:'♿ 무장애 정보',route:'🗺 동선',festival:'🎎 행사',kma_weather:'☔ 기상청 예보',weather_warning:'⚠ 기상특보',encyclopedia:'📜 민족문화대백과',place_info:'🏛 공식 운영정보'};
   const IN=(R.implicit_needs||[]),SG=(R.context_signals||[]);
@@ -361,7 +365,7 @@ function renderUser(d){
   h+=`<h2>📚 출처</h2><div class="card">${order.length?order.map((i,k)=>srcRow(i,k+1)).join(''):'<span class="mut">인용된 출처가 없습니다.</span>'}</div>`;
   const rest=(R.sources||[]).filter(s=>!(s.id in num));
   if(rest.length)h+=`<details class="card"><summary>참고했지만 코스에 쓰지 않은 자료 ${rest.length}개 · 왜 뺐는지 보기</summary>${rest.map(s=>{const t=TRUST[s.trust]||['',''];return `<div class="src"><div class="n">–</div><div><b>${esc(s.label||s.path)}</b> <span class="b">${esc(TYPE[s.source_type]||s.source_type||'')}</span> <span class="b ${t[1]}">${t[0]}</span><div class="mut small">${esc(s.trust_reason||'')}</div></div></div>`}).join('')}</details>`;
-  const SUG=['비가 오면 어떻게 바꿔요?','점심은 어디서 먹을까요?','2시간 안으로 줄여 주세요','아이도 같이 가면요?','이동을 더 줄여 주세요'];
+  const SUG=(R.request_type&&R.request_type!=='course')?['어떻게 확인할 수 있어요?','관련 자료를 더 찾아 주세요','이 내용으로 반나절 코스 짜 주세요']:['비가 오면 어떻게 바꿔요?','점심은 어디서 먹을까요?','2시간 안으로 줄여 주세요','아이도 같이 가면요?','이동을 더 줄여 주세요'];
   h+=`<h2>💬 이어서 물어보기</h2><div class="card"><div class="chips">${SUG.map(q=>`<button class="chip" onclick="askFollow(this.textContent)">${esc(q)}</button>`).join('')}</div>
    <textarea id="fq" rows="2" style="margin-top:10px" placeholder="예) 아버지가 오래 못 걸으셔서 택시 위주로 바꿔 주세요"></textarea>
    <button class="go" style="margin-top:8px" onclick="askFollow(document.getElementById('fq').value)">이어서 물어보기</button>

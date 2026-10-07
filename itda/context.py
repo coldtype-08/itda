@@ -166,6 +166,9 @@ _OFFTOPIC = (r"주식|코인|비트코인|투자|코드|코딩|프로그램\s*�
 def scope_check(task: str) -> tuple[bool | None, str]:
     """(False, reason) when the request is clearly outside ItDA's domain; (None, '') otherwise.
     Clear cases are decided here in code; borderline ones are left to the planner."""
+    if re.search(_NK, task) and re.search(_TRAVEL + r"|가(려|고|볼)|갈\s*(거|건데|예정)", task) and not re.search(_NK_OK, task, re.I):
+        return False, ("북한 지역 여행은 현재 일반인의 방문이 법적으로 제한되어 있고, 공식 운영 정보를 확인할 수 없어 일정을 만들 수 없어요. "
+                       "대신 국내에서 갈 수 있는 접경 지역(DMZ, 임진각, 통일전망대 등)의 역사 코스는 도와드릴 수 있어요.")
     abroad = re.findall(_ABROAD, task)
     if abroad and re.search(_TRAVEL, task) and not re.search(_KOREA, task):
         return False, (f"{', '.join(sorted(set(abroad)))}처럼 한국이 아닌 곳의 여행 요청이에요. "
@@ -184,3 +187,22 @@ def scope_hint(task: str) -> str:
     if re.search(_OFFTOPIC, task) and not re.search(_KOREA + "|문화|역사|관광|여행지", task):
         return "문화·역사·여행과 무관한 요청으로 보임 → 범위 밖일 가능성 높음"
     return "특이사항 없음"
+
+
+_FACTCHECK = (r"(라는데|라던데|래요|라고\s*하던데|던데)\s*\??\s*$|맞(아|나요|습니까)\s*\??\s*$|사실(이야|인가요|이에요|일까)|"
+              r"진짜(야|예요|인가요)?\s*\??\s*$|정말(이야|인가요)|확인해\s*(줘|주세요)|is it true|really\?")
+_COURSE = r"코스|일정|여행\s*(계획|짜)|동선|반나절|하루|당일|[0-9]\s*박|투어|짜\s*줘|짜줘|추천해\s*줘|가볼\s*만한|돌아보"
+_NK = r"북한|평양|원산|개성\s*(관광|여행)|금강산\s*(관광|여행)|백두산\s*(북한|쪽)|조선민주주의"
+_NK_OK = r"DMZ|비무장지대|임진각|통일전망대|판문점\s*견학|제3땅굴|도라전망대|철원|파주"
+
+
+def request_type(text: str) -> str:
+    """course | factcheck | answer — decides the response shape (a fact-check is not a course)."""
+    t = text.strip()
+    if re.search(_FACTCHECK, t, re.I | re.M) and not re.search(_COURSE, t):
+        return "factcheck"
+    if re.search(_COURSE, t):
+        return "course"
+    if re.search(r"\?\s*$|알려\s*(줘|주세요)|뭐(야|예요)|무엇|어떤|왜|언제|어디|누구|설명해", t, re.M):
+        return "answer"
+    return "course"

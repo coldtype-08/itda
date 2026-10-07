@@ -192,6 +192,10 @@ SYNTH_SYSTEM = f"""너는 ItDA의 '종합 에이전트'다. 검증된 사실만�
 - 검증 결과의 quorum에서 tentative인 항목은 scenarios(Plan B)에, unresolved인 항목은 day_card의 '현장 확인' 줄과 uncertainties에 반드시 넣는다.
 - 추정 배려(implicit_needs)는 사실이 아니라 선호다. 코스에 자연스럽게 녹이고(예: 한식당 우선, 쉬는 지점, 계단 적은 동선),
   considerations에 무엇을 어떻게 반영했는지 적는다. 근거 자료처럼 인용하지 않고, 명시된 조건과 충돌하면 명시 조건을 따른다.
+- 요청 유형이 factcheck/answer이면 코스를 만들지 않는다. answer에 직접적인 답을, verdict에 판정을 쓰고
+  itinerary·day_card·phrase_cards·dietary_plan·considerations는 비워 둔다. 판정은 다음 중 하나다:
+  supported(자료로 확인됨) | contradicted(자료가 반대 내용을 말함) | no_evidence(자료로 확인되지 않음) | uncertain(자료끼리 엇갈리거나 판독 불확실).
+  자료에 없다는 이유만으로 '아니다'라고 단정하지 않는다. 그건 no_evidence다. 어떻게 확인할 수 있는지 uncertainties에 적는다.
 - 과제에 '연계 질문'이 있으면 answer에 질문에 대한 직접적인 답을 먼저 쓰고, 이전 초안(previous_draft) 대비 바뀐 점을 changes에 적는다.
   이전 초안은 ItDA가 만든 결과일 뿐 사실 근거가 아니므로, 바꾸는 내용도 자료로 확인된 것만 쓴다.
 - 각 방문객의 음식 제한·알레르기를 개인별로 반영하고, 현장에서 확인할 질문을 적는다.
@@ -208,7 +212,7 @@ SYNTH_SYSTEM = f"""너는 ItDA의 '종합 에이전트'다. 검증된 사실만�
 반드시 아래 JSON 하나만 출력한다:
 {{{{"title": str, "summary": str, "deliverable_text": str,
  "day_card": [str],
- "answer": str, "changes": [str],
+ "answer": str, "verdict": "supported|contradicted|no_evidence|uncertain|null", "changes": [str],
  "considerations": [{{{{"need": str, "how_applied": str}}}}],
  "decisions": [{{{{"question": str, "choice": str, "why": str, "risk_if_wrong": str}}}}],
  "scenarios": [{{{{"if": str, "then": str, "evidence": [doc_id]}}}}],
@@ -226,6 +230,8 @@ SYNTH_USER = """[사용자 요청]
 [사용자 렌즈]
 - 방문객 유형: {visitor_type} → {lens}
 - 관심사: {interests}
+
+[요청 유형] {request_type}
 
 [추정 배려 — 사실이 아니라 선호로만 반영]
 {implicit}
@@ -279,6 +285,8 @@ PLAN_SYSTEM = f"""너는 ItDA의 '계획 에이전트'다. 사용자 목표를 �
 - 방문객 유형(foreign=해외 방문객, korean=내국인)과 출력 언어를 과제·방문객 자료에서 판단한다.
   예: 해외 방문객이면 en, 일본인 단체면 ja, 내국인이면 ko. 렌즈가 이미 지정돼 있으면 그대로 따른다.
 - 과제가 요구하는 결과물의 형태(코스 초안, 안내문, 해설 카드, 체크리스트 등)를 deliverable에 적는다.
+- request_type: course(코스·일정을 원함) | factcheck(어떤 주장이 맞는지 확인) | answer(질문에 대한 답).
+  factcheck/answer면 코스를 짜지 않고, 질문에 필요한 확인만 계획한다(상황 배려·동선 도구는 쓰지 않는다).
 - 말하지 않은 배려를 센스 있게 추론해 implicit_needs에 적는다(한국적 맥락 포함). 각 항목에 이유와 확신도를 단다. 예:
   부모님·어르신 동행 → 한식 선호 가능성, 걷는 거리·계단 최소화, 60~90분마다 앉아 쉴 곳, 화장실 위치, 이른 점심·저녁, 좌식/입식 확인, 붐비는 시간 피하기
   아이 동반 → 짧은 체험 단위, 간식·화장실·유모차, 낮잠 시간 / 외국인 손님 → 매운 정도·젓갈·신발 벗는 식당 미리 안내, 사진 명소
@@ -290,6 +298,7 @@ PLAN_SYSTEM = f"""너는 ItDA의 '계획 에이전트'다. 사용자 목표를 �
 {{"in_scope": bool, "scope_reason": str, "alternatives": [str],
  "goal": str, "visit_date": "YYYY-MM-DD 또는 null",
  "visitor_type": "foreign|korean", "language": "en|ko|ja|zh|...", "deliverable": str,
+ "request_type": "course|factcheck|answer",
  "implicit_needs": [{{"need": str, "why": str, "confidence": "high|medium|low"}}],
  "places": [{{"name": str, "likely_real": bool}}],
  "checks": [str],

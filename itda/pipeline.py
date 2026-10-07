@@ -404,13 +404,13 @@ def _detect_language(task: str, docs: list[Doc]) -> str | None:
 
 
 def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: str = "",
-               implicit: list | None = None) -> dict:
+               implicit: list | None = None, request_type: str = "course") -> dict:
     system = prompts.SYNTH_SYSTEM.format(language=LANG_NAMES.get(cfg.language, cfg.language),
                                          deliverable=deliverable or "과제에 적힌 대로")
     user = prompts.SYNTH_USER.format(
         task=task, visitor_type=cfg.visitor_type, lens=prompts.LENS[cfg.visitor_type],
         interests=", ".join(f"{i}({prompts.INTEREST[i]})" for i in cfg.interests),
-        implicit=json.dumps(implicit or [], ensure_ascii=False),
+        implicit=json.dumps(implicit or [], ensure_ascii=False), request_type=request_type,
         resolved=json.dumps(resolved, ensure_ascii=False, indent=1))
     return llm.chat_json(system, user, cfg.model_main, "synthesize",
                          mock=lambda: {"title": "ItDA draft (mock)", "summary": "", "itinerary": [],
@@ -427,7 +427,9 @@ def _normalize_plan(plan) -> dict:
     plan = plan if isinstance(plan, dict) else {}
     for k in _PLAN_LISTS:
         v = plan.get(k)
-        plan[k] = v if isinstance(v, list) else ([] if v in (None, "") else [v])
+        items = v if isinstance(v, list) else ([] if v in (None, "") else [v])
+        plan[k] = [x for x in items if (x.strip() if isinstance(x, str) else
+                                        (isinstance(x, dict) and any(str(y).strip() for y in x.values())))]
     for k in ("title", "summary", "deliverable_text", "answer"):
         if not isinstance(plan.get(k), str):
             plan[k] = "" if plan.get(k) is None else str(plan.get(k))
@@ -685,9 +687,15 @@ def run(cfg: Config) -> dict:
                             or ("en" if cfg.visitor_type == "foreign" else "ko"))
             _progress(f"   렌즈 자동 판단: {cfg.visitor_type} / 언어 {cfg.language}")
         visit_date = visit_date or agent_plan.get("visit_date")
+        rtype = context.request_type(_request_text(task))
+        if agent_plan.get("request_type") in ("course", "factcheck", "answer") and rtype == "course":
+            rtype = agent_plan["request_type"]
+        if rtype != "course":
+            _progress(f"   요청 유형: {rtype} → 코스 대신 판정·답변으로 응답")
+            rules = [r for r in rules if r.id in ("diet", "history")] if rtype == "answer" else []
         places = [p.get("name") for p in (agent_plan.get("places") or [])
                   if isinstance(p, dict) and p.get("name") and p.get("likely_real", True) is not False]
-        extra = context.suggested_calls(rules, places, visit_date, set(tools.available()),
+        extra = [] if rtype != "course" else context.suggested_calls(rules, places, visit_date, set(tools.available()),
                                         [c for c in (agent_plan.get("tool_calls") or []) if isinstance(c, dict)])
         if extra:
             _progress(f"   상황 신호로 추가한 확인: " + ", ".join(f"{c['tool']}({c['args'].get('place') or c['args'].get('topic') or '…'})" for c in extra))
@@ -725,7 +733,12 @@ def run(cfg: Config) -> dict:
     implicit = rule_needs + [n for n in llm_needs if _norm(str(n.get("need", ""))) not in seen]
     if implicit:
         _progress("   추정 배려: " + ", ".join(str(x.get("need", x))[:30] for x in implicit[:6] if isinstance(x, dict)))
-    plan = _normalize_plan(synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or ""), implicit))
+    if rtype != "course":
+        implicit = []
+    plan = _normalize_plan(synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or ""), implicit, rtype))
+    if rtype != "course":  # a fact-check or a question gets an answer, not a day plan
+        for k in ("itinerary", "day_card", "phrase_cards", "dietary_plan", "considerations", "scenarios"):
+            plan[k] = []
     _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
     plan, removed = ground_check(cfg, llm, plan, resolved, docs, triaged)
     plan = _normalize_plan(plan)
@@ -765,8 +778,9 @@ def run(cfg: Config) -> dict:
         "consensus": cons,
         "agent_plan": agent_plan,
         "implicit_needs": implicit,
+        "request_type": rtype,
         "context_signals": [{"id": r.id, "label": r.label, "icon": r.icon} for r in rules],
-        "map": next((x["result"] for x in tool_log if x["call"].get("tool") == "route"
+        "map": None if rtype != "course" else next((x["result"] for x in tool_log if x["call"].get("tool") == "route"
                      and x["result"].get("ok") and x["result"].get("status") == "ok"), None),
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
