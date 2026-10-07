@@ -303,6 +303,14 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
         out.extend(["", f"## {title}", ""])
         out.extend(f"- {x}" for x in (items or [L("없음", "None")]))
 
+    out += ["", f"## {L('판단 근거', 'Why these sources')}", "",
+            f"| {L('주제', 'Topic')} | {L('판정', 'Decision')} | {L('상태', 'Status')} | {L('결정 기준', 'Decided by')} | {L('버린 자료', 'Overridden')} |",
+            "|---|---|---|---|---|"]
+    for f in resolved.get("facts", []):
+        over = "; ".join(f"`{id2path.get(o.get('doc'), o.get('doc'))}` {o.get('reason', '')}" for o in f.get("overridden") or [])
+        out.append(f"| {f.get('topic', '')}: {f.get('subject', '')} | {f.get('decision', '')} | {f.get('status', '')} | "
+                   f"**{f.get('decided_by', '')}** — {f.get('rationale', '')} | {over or '-'} |")
+
     bullets(L("확인 필요", "Needs confirmation"), plan.get("uncertainties"))
     bullets(L("승인 필요 (수행하지 않음)", "Needs approval (not performed)"), plan.get("approvals_needed"))
     bullets(L("제외한 자료", "Excluded sources"),
