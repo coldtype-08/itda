@@ -83,4 +83,7 @@ TODO(데모 담당): 데모 URL 또는 단계별 확인 방법
 | 공공데이터포털 (키 있을 때) | 관광공사 국문/영문 관광정보 | GET `apis.data.go.kr/B551011/**` |
 | 네이버 검색 API (키 있을 때) | 지도 등록 장소(이름·주소), 지식백과, 뉴스, 블로그 요약(신뢰도 낮음). 지도 리뷰·블로그 본문은 사용하지 않음(크롤링 금지) | GET `openapi.naver.com/v1/search/**` |
 | Brave Search (키 있을 때) | 일반 웹 검색 (Tavily 대체) | GET `api.search.brave.com/res/v1/web/search` |
+| 공공데이터포털 확장 (팀 모듈 `itda/kapi.py`) | 관광공사 공식 운영정보·무장애 정보·행사, 기상청 단기예보·특보, TAGO 버스, 장애인 편의시설 | GET `apis.data.go.kr/{B551011,1360000,1613000,B554287}/**` |
+| 한국민족문화대백과사전 (AKS) | 역사·문화 해설의 권위 있는 근거 | GET `devin.aks.ac.kr:8080/api/**` |
+| TMAP 보행자 경로 (SK open API) | 방문 순서 정렬 + 구간별 도보 거리·시간 | POST `apis.openapi.sk.com/tmap/routes/pedestrian` |
 | (선택) L40S 로컬 NIM | 개인정보가 포함된 단계의 로컬 추론 | `host.openshell.internal:8000` 한정 |

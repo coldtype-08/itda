@@ -25,7 +25,7 @@ $NC upload "$STAGE/itda" /sandbox/
 # allow-listed API hosts in policy/presets/, so they cannot be sent anywhere else.
 TOOLENV=""
 if [ -n "${ITDA_SANDBOX_TOOL_KEYS:-}" ]; then
-  for k in TAVILY_API_KEY BRAVE_API_KEY NAVER_CLIENT_ID NAVER_CLIENT_SECRET DATA_GO_KR_KEY; do
+  for k in TAVILY_API_KEY BRAVE_API_KEY NAVER_CLIENT_ID NAVER_CLIENT_SECRET DATA_GO_KR_KEY PUBLIC_DATA_SERVICE_KEY AKS_API_KEY TMAP_APP_KEY; do
     eval "v=\${$k:-}"; [ -n "$v" ] && TOOLENV="$TOOLENV $k=$v"
   done
 fi

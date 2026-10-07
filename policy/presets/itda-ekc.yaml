@@ -1,0 +1,18 @@
+# 한국민족문화대백과사전 OpenAPI (AKS). Read-only, header auth (X-API-Key).
+#   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-ekc.yaml --dry-run
+preset:
+  name: itda-ekc
+  description: "Encyclopedia of Korean Culture (AKS) OpenAPI, GET /api/** only"
+network_policies:
+  itda_ekc:
+    name: itda-ekc
+    endpoints:
+      - host: devin.aks.ac.kr
+        port: 8080
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/api/**" }
+    binaries:
+      - { path: /opt/venv/bin/python3 }
+      - { path: /opt/venv/bin/python }

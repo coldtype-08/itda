@@ -17,6 +17,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from .guard import Audit
+from .tools_kr import KoreanTools
 
 ALLOWED_HOSTS = {
     "ko.wikipedia.org", "en.wikipedia.org",
@@ -25,6 +26,8 @@ ALLOWED_HOSTS = {
     "apis.data.go.kr",
     "openapi.naver.com",
     "api.search.brave.com",
+    "devin.aks.ac.kr",          # 한국민족문화대백과사전 (team module, port 8080)
+    "apis.openapi.sk.com",      # TMAP pedestrian routes
 }
 NAVER_KINDS = ("local", "blog", "encyc", "news", "webkr")
 UA = "ItDA-hackathon-agent/0.1 (K-culture course drafts)"
@@ -47,6 +50,10 @@ class Tools:
             "naver": self.naver,
             "brave": self.brave,
         }
+        self.kr = KoreanTools()
+        for name in ("place_info", "accessibility", "kma_weather", "weather_warning", "festival",
+                     "nearby", "encyclopedia", "route"):
+            self.registry[name] = getattr(self.kr, name)
 
     # ---- plumbing -------------------------------------------------------------------------
     def available(self) -> dict[str, str]:
@@ -60,6 +67,7 @@ class Tools:
                             "encyc(지식백과), news(뉴스). 지도 리뷰·블로그 본문은 제공되지 않음")
         if os.environ.get("BRAVE_API_KEY"):
             out["brave"] = "일반 웹 검색 (Brave Search)"
+        out.update(self.kr.available())
         return out
 
     def _http(self, url: str, body: dict | None = None, headers: dict | None = None) -> dict:

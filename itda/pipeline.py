@@ -361,7 +361,8 @@ def run_tools(plan: dict, tools: Tools, visit_date: str | None, max_calls: int =
     for i, item in enumerate(x for x in log if x["result"].get("ok")):
         text = json.dumps(item["result"], ensure_ascii=False)[:4000]
         args = item["call"].get("args") or {}
-        label = args.get("query") or args.get("keyword") or args.get("place") or ""
+        label = (args.get("query") or args.get("keyword") or args.get("place") or args.get("topic")
+                 or (" → ".join(map(str, args["places"])) if isinstance(args.get("places"), list) else args.get("places")) or "")
         ext.append(Doc(id=f"W{i + 1:02d}", path=f"external/{item['call']['tool']}/{label}", text=text,
                        bytes=len(text.encode()),
                        instruction_hints=sorted({m.group(0) for m in _INSTRUCTION_RE.finditer(text)})))
@@ -469,7 +470,10 @@ def _cited(plan: dict, resolved: dict) -> set:
 
 
 _TOOL_LABEL = {"wiki": "위키백과", "weather": "Open-Meteo 일기예보", "tavily": "웹 검색 (Tavily)",
-               "brave": "웹 검색 (Brave)", "tour": "한국관광공사 TourAPI (공공데이터)", "naver": "네이버 검색"}
+               "brave": "웹 검색 (Brave)", "tour": "한국관광공사 TourAPI (공공데이터)", "naver": "네이버 검색",
+               "place_info": "한국관광공사 공식 등록 정보", "accessibility": "한국관광공사 무장애 여행정보",
+               "kma_weather": "기상청 단기예보", "weather_warning": "기상청 기상특보", "festival": "한국관광공사 행사·축제",
+               "nearby": "한국관광공사 주변 장소", "encyclopedia": "한국민족문화대백과사전", "route": "동선 (TMAP 보행자 경로)"}
 
 
 def _source_meta(t: dict) -> dict:

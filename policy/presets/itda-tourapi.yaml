@@ -2,7 +2,7 @@
 #   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-tourapi.yaml --dry-run
 preset:
   name: itda-tourapi
-  description: "data.go.kr: Korea Tourism Organization (B551011) and KMA (1360000) paths only"
+  description: "data.go.kr: KTO tourism/barrier-free (B551011), KMA (1360000), TAGO bus (1613000), accessibility facilities (B554287) only"
 network_policies:
   itda_tourapi:
     name: itda-tourapi
@@ -14,6 +14,8 @@ network_policies:
         rules:
           - allow: { method: GET, path: "/B551011/**" }
           - allow: { method: GET, path: "/1360000/**" }
+          - allow: { method: GET, path: "/1613000/**" }
+          - allow: { method: GET, path: "/B554287/**" }
     binaries:
       - { path: /opt/venv/bin/python3 }
       - { path: /opt/venv/bin/python }
