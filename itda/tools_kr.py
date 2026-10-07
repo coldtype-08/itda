@@ -16,6 +16,8 @@ from datetime import date
 from typing import Any
 
 TMAP_URL = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1"
+TMAP_CAR = "https://apis.openapi.sk.com/tmap/routes?version=1"
+TMAP_TRANSIT = "https://apis.openapi.sk.com/transit/routes"
 TMAP_POI = "https://apis.openapi.sk.com/tmap/pois?version=1&count=8&resCoordType=WGS84GEO&searchKeyword="
 _AUX = ("주차장", "주유소", "정류장", "정류소", "출구", "입구역", "화장실", "매표소", "충전소", "ATM", "편의점")
 
@@ -184,7 +186,50 @@ class KoreanTools:
         return {"meters": int(props.get("totalDistance", 0)), "minutes": round(int(props.get("totalTime", 0)) / 60),
                 "method": "TMAP 보행자 경로", "path": path[::step] + path[-1:]}
 
-    def route(self, places: list[str] | str, keep_order: bool = False) -> dict:
+    @staticmethod
+    def _post(url: str, body: dict) -> dict:
+        req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
+                                     headers={"appKey": os.environ["TMAP_APP_KEY"], "Accept": "application/json",
+                                              "Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.loads(r.read() or b"{}")
+
+    @staticmethod
+    def _lines(feats: list[dict]) -> list[list[float]]:
+        path: list[list[float]] = []
+        for f in feats:
+            g = f.get("geometry") or {}
+            if g.get("type") == "LineString":
+                path += [[c[1], c[0]] for c in g.get("coordinates", [])]
+        step = max(1, len(path) // 200)
+        return path[::step] + path[-1:] if path else []
+
+    def _tmap_car(self, a: dict, b: dict) -> dict:
+        d = self._post(TMAP_CAR, {"startX": str(a["lon"]), "startY": str(a["lat"]), "endX": str(b["lon"]),
+                                  "endY": str(b["lat"]), "reqCoordType": "WGS84GEO", "resCoordType": "WGS84GEO",
+                                  "searchOption": "0", "trafficInfo": "Y"})
+        p = d["features"][0]["properties"]
+        return {"mode": "taxi", "minutes": round(int(p.get("totalTime", 0)) / 60) + 3,  # +3: hailing/drop-off
+                "meters": int(p.get("totalDistance", 0)), "fare_won": int(p.get("taxiFare") or 0) or None,
+                "method": "TMAP 자동차 경로 (실시간 교통 반영)", "path": self._lines(d["features"])}
+
+    def _tmap_transit(self, a: dict, b: dict) -> dict:
+        d = self._post(TMAP_TRANSIT, {"startX": str(a["lon"]), "startY": str(a["lat"]), "endX": str(b["lon"]),
+                                      "endY": str(b["lat"]), "count": 1, "lang": 0, "format": "json"})
+        it = d["metaData"]["plan"]["itineraries"][0]
+        legs = it.get("legs", [])
+        modes = [l.get("mode") for l in legs if l.get("mode") and l.get("mode") != "WALK"]
+        names = [l.get("route") for l in legs if l.get("route")]
+        return {"mode": "transit", "minutes": round(int(it.get("totalTime", 0)) / 60),
+                "meters": int(it.get("totalDistance", 0)),
+                "fare_won": int(((it.get("fare") or {}).get("regular") or {}).get("totalFare") or 0) or None,
+                "walk_minutes": round(int(it.get("totalWalkTime", 0)) / 60), "transfers": int(it.get("transferCount", 0)),
+                "lines": names[:4], "transit_modes": modes, "method": "TMAP 대중교통 경로"}
+
+    def route(self, places: list[str] | str, keep_order: bool = False, max_walk_min: int = 15,
+              mobility: bool = False) -> dict:
+        """Visit order + per-leg transport choice: walk if short; otherwise taxi or public transport.
+        mobility=True (elders, knees, wheelchair, pregnancy) lowers the walking limit and prefers taxis."""
         names = [p.strip() for p in (places.split(",") if isinstance(places, str) else places) if str(p).strip()][:8]
         pts, missing = [], []
         for n in names:
@@ -200,20 +245,58 @@ class KoreanTools:
                 (order[-1]["lat"], order[-1]["lon"]), (p["lat"], p["lon"])))
             order.append(nxt)
             rest.remove(nxt)
+        limit = min(int(max_walk_min or 15), 10) if mobility else int(max_walk_min or 15)
+        has_tmap = bool(os.environ.get("TMAP_APP_KEY"))
         legs = []
         for a, b in zip(order, order[1:]):
-            leg = {"from": a["name"], "to": b["name"]}
-            try:
-                if not os.environ.get("TMAP_APP_KEY"):
-                    raise RuntimeError("no TMAP key")
-                leg.update(self._tmap_leg(a, b))
-            except Exception as e:  # noqa: BLE001  fall back to a straight-line walking estimate
-                m = self._haversine((a["lat"], a["lon"]), (b["lat"], b["lon"])) * 1.3
-                leg.update({"meters": int(m), "minutes": max(1, round(m / 70)), "method": "직선거리×1.3 추정 (도보 70m/분)",
-                            **({"tmap_error": type(e).__name__} if os.environ.get("TMAP_APP_KEY") else {})})
+            leg: dict = {"from": a["name"], "to": b["name"]}
+            straight = self._haversine((a["lat"], a["lon"]), (b["lat"], b["lon"]))
+            walk = None
+            if has_tmap and straight < 4000:  # walking route only worth asking for short hops
+                try:
+                    walk = {"mode": "walk", **self._tmap_leg(a, b)}
+                except Exception as e:  # noqa: BLE001
+                    leg["tmap_error"] = type(e).__name__
+            if walk is None:
+                m = straight * 1.3
+                walk = {"mode": "walk", "meters": int(m), "minutes": max(1, round(m / 70)),
+                        "method": "직선거리×1.3 추정 (도보 70m/분)"}
+            if walk["minutes"] <= limit:
+                leg.update(walk)
+                leg["why"] = f"도보 {walk['minutes']}분 (기준 {limit}분 이내)"
+            else:
+                options = []
+                if has_tmap:
+                    for fn in (self._tmap_car, self._tmap_transit):
+                        try:
+                            options.append(fn(a, b))
+                        except Exception as e:  # noqa: BLE001  transit may not be subscribed
+                            leg.setdefault("unavailable", []).append(f"{fn.__name__[6:]}: {type(e).__name__}")
+                if not options:  # rough taxi estimate without TMAP: road ≈ 1.4× straight, 25 km/h in town
+                    km = straight * 1.4 / 1000
+                    options.append({"mode": "taxi", "meters": int(km * 1000), "minutes": round(km / 25 * 60) + 5,
+                                    "fare_won": None, "method": "직선거리 기반 택시 추정 (요금 미확인)"})
+                taxi = next((o for o in options if o["mode"] == "taxi"), None)
+                transit = next((o for o in options if o["mode"] == "transit"), None)
+                pick = taxi or transit
+                if transit and taxi and not mobility and transit["minutes"] <= taxi["minutes"] * 1.8 \
+                        and transit.get("walk_minutes", 0) <= limit:
+                    pick = transit
+                elif transit and not taxi:
+                    pick = transit
+                leg.update(pick)
+                leg["why"] = (f"도보 {walk['minutes']}분은 기준({limit}분) 초과"
+                              + (" · 이동 부담을 줄이려 택시 우선" if mobility and pick["mode"] == "taxi" else ""))
+                leg["alternatives"] = {o["mode"]: {k: o.get(k) for k in ("minutes", "fare_won", "transfers", "lines")}
+                                       for o in options if o is not pick}
+                leg["alternatives"]["walk"] = {"minutes": walk["minutes"]}
             legs.append(leg)
+        by_mode: dict[str, int] = {}
+        for l in legs:
+            by_mode[l.get("mode", "walk")] = by_mode.get(l.get("mode", "walk"), 0) + int(l.get("minutes") or 0)
         return {"status": "ok", "order": [p["name"] for p in order], "legs": legs,
+                "minutes_by_mode": by_mode, "total_minutes": sum(by_mode.values()), "mobility": mobility,
                 "points": [{"name": p["name"], "lat": p["lat"], "lon": p["lon"], "coord_source": p["coord_source"]} for p in order],
-                "total_walk_minutes": sum(l["minutes"] for l in legs), "missing_coords": missing,
-                "caveats": ["도보 기준. 계단·경사·공사 등 당일 상황과 운영시간 순서는 별도로 확인",
+                "total_walk_minutes": by_mode.get("walk", 0), "missing_coords": missing,
+                "caveats": ["구간별 수단은 거리와 동행자 조건으로 자동 선택. 택시비·소요시간은 예상치이며 당일 교통에 따라 다름",
                             *(["좌표 미확인 장소는 동선에서 제외: " + ", ".join(missing)] if missing else [])]}

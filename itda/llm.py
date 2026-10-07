@@ -40,6 +40,7 @@ class LLM:
         self.no_think = os.environ.get("ITDA_THINKING") != "1"
         self.no_think_supported = True
         self.small_disabled = False  # set after the small endpoint is denied once
+        self.transcript: list[dict] = []  # every prompt sent and answer received (shown in the UI)
 
     def _base(self, model: str) -> str:
         if self.cfg.small_base_url and model == self.cfg.model_small:
@@ -86,6 +87,15 @@ class LLM:
                 if os.environ.get("ITDA_VERBOSE", "1") == "1":
                     print(f"      · {label} {secs}s tokens={usage.get('total_tokens')} "
                           f"finish={choice.get('finish_reason')}", file=sys.stderr, flush=True)
+                sys_p = next((m["content"] for m in messages if m["role"] == "system"), "")
+                usr_p = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+                self.transcript.append({"label": label, "model": model, "seconds": secs,
+                                        "endpoint": urllib.parse.urlparse(self._base(model)).netloc,
+                                        "system": sys_p[:6000], "user": usr_p[:9000], "response": text[:6000]})
+                if os.environ.get("ITDA_VERBOSE", "1") == "1":
+                    print(f"        ↳ 보낸 프롬프트: system {len(sys_p):,}자 + user {len(usr_p):,}자 | "
+                          f"user 앞부분: {usr_p[:120].replace(chr(10), ' ')}…", file=sys.stderr, flush=True)
+                    print(f"        ↳ 받은 응답: {text[:160].replace(chr(10), ' ')}…", file=sys.stderr, flush=True)
                 if not text.strip() and msg.get("reasoning_content"):
                     raise LLMError("model returned reasoning only (answer truncated)")
                 return _THINK.sub("", text).strip()

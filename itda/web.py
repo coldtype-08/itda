@@ -140,6 +140,8 @@ def _result(job: str) -> dict:
             data[key] = json.loads(found[name].read_text())
     if "course_draft.md" in found:
         data["markdown"] = found["course_draft.md"].read_text()
+    if "llm_transcript.json" in found:
+        data["transcript"] = json.loads(found["llm_transcript.json"].read_text())
     return data
 
 
@@ -307,7 +309,8 @@ function pollJob(job){
     document.querySelectorAll('.steps div').forEach((d,i)=>d.classList.toggle('on',i<k));
     $('#st').textContent=s.done?(s.ok?`완료 · ${s.elapsed}초`:'실행 중 문제가 생겼어요. 검증 과정 탭에서 로그를 확인하세요.'):`${(STEPS[Math.max(0,k-1)]||STEPS[0])[1]} · ${s.elapsed}초`;
     window._log=log;const ll=$('#livelog');if(ll){ll.textContent=log;ll.scrollTop=1e9}if(!s.done)return setTimeout(poll,1000);$('#go').disabled=false;
-    if(s.ok){lastJob=job;const d=await (await fetch('result?job='+job)).json();renderUser(d);renderDev(d);$('#dev').innerHTML+=`<h2>실행 로그</h2><pre>${esc(log)}</pre>`;$('#tabs').hidden=false}
+    if(s.ok){lastJob=job;const d=await (await fetch('result?job='+job)).json();renderUser(d);renderDev(d);
+      const TR=d.transcript||[];if(TR.length)$('#dev').innerHTML+=`<h2>🧾 프롬프트 기록 (${TR.length}회 호출)</h2>`+TR.map((t,i)=>`<details class="card"><summary><b>${i+1}. ${esc(t.label)}</b> · ${esc(t.model)} · ${esc(t.endpoint)} · ${esc(t.seconds)}s</summary><div class="lbl">system 프롬프트</div><pre>${esc(t.system)}</pre><div class="lbl">user 프롬프트</div><pre>${esc(t.user)}</pre><div class="lbl">모델 응답</div><pre>${esc(t.response)}</pre></details>`).join('');$('#dev').innerHTML+=`<h2>실행 로그</h2><pre>${esc(log)}</pre>`;$('#tabs').hidden=false}
     else{$('#dev').innerHTML=`<pre>${esc(log)}</pre>`;$('#tabs').hidden=false;$('#dev').hidden=false;$('#res').hidden=true}};poll()}
 function askFollow(q){if(!q||!q.trim()||!lastJob)return;startRun({followup:q,parent:lastJob});window.scrollTo({top:0,behavior:'smooth'})}
 const TYPE={official_notice:'공식 공지',field_survey:'현장 조사',structured_data:'방문단 정보',internal_guideline:'운영 규칙',interpretation_draft:'해설 자료',community_post:'지역 게시판',promotional:'홍보물',personal_blog:'개인 블로그',advertisement:'광고',archive:'과거 기록',web_search:'웹 검색',public_api:'공공 API',external_instruction:'의심되는 외부 지시',other:'기타'};
@@ -338,14 +341,17 @@ function renderUser(d){
   if((P.day_card||[]).length)h+=`<h2>📱 오늘의 카드</h2><div class="phone"><div class="t">${esc(P.title)}</div><ul>${P.day_card.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div><p class="mut small" style="text-align:center">화면을 캡처해 두면 현장에서 바로 볼 수 있어요.</p>`;
   const MP=R.map;
   if(MP&&(MP.points||[]).length>=2)h+=`<h2>🧭 동선 지도</h2><div id="map" style="height:340px;border-radius:14px;border:1px solid var(--line)"></div>
-    <div class="card"><ol style="margin:0">${(MP.legs||[]).map(l=>`<li>${esc(l.from)} → ${esc(l.to)} · <b>${esc(l.minutes)}분</b> (${Math.round((l.meters||0)/10)/100}km) <span class="mut small">${esc(l.method)}</span></li>`).join('')}</ol>
-    <div class="mut small">총 도보 ${esc(MP.total_walk_minutes)}분 · 지도 © OpenStreetMap · 경로 ${MP.legs&&MP.legs.some(l=>l.path)?'TMAP':'직선 추정'}</div></div>`;
+    <div class="card"><ol style="margin:0">${(MP.legs||[]).map(l=>{const ic={walk:'🚶 도보',taxi:'🚕 택시',transit:'🚌 대중교통'}[l.mode||'walk'];const alt=l.alternatives||{};
+      return `<li>${esc(l.from)} → ${esc(l.to)} · <b>${ic} ${esc(l.minutes)}분</b> (${Math.round((l.meters||0)/10)/100}km)${l.fare_won?` · 약 ${Number(l.fare_won).toLocaleString()}원`:''}${(l.lines||[]).length?` · ${esc(l.lines.join(' → '))}`:''}
+      <div class="mut small">${esc(l.why||'')}${Object.keys(alt).length?' · 다른 선택: '+Object.entries(alt).map(([k,v])=>`${{walk:'도보',taxi:'택시',transit:'대중교통'}[k]} ${v.minutes}분${v.fare_won?' '+Number(v.fare_won).toLocaleString()+'원':''}`).join(', '):''} · ${esc(l.method||'')}</div></li>`}).join('')}</ol>
+    <div class="mut small">총 이동 ${esc(MP.total_minutes||MP.total_walk_minutes)}분 (${Object.entries(MP.minutes_by_mode||{}).map(([k,v])=>`${{walk:'도보',taxi:'택시',transit:'대중교통'}[k]} ${v}분`).join(' · ')}) · 지도 © OpenStreetMap · 경로 TMAP</div></div>`;
   if((P.itinerary||[]).length)h+=`<h2>🗺 일정</h2><div class="tl">${P.itinerary.map(i=>`<div class="it"><span class="time">${esc(i.time)}</span><h3>${esc(i.place)}${fn(i.evidence)}</h3><div>${esc(i.activity)}</div>${i.access_notes?`<div class="note">♿ ${esc(i.access_notes)}</div>`:''}</div>`).join('')}</div>`;
   if((P.phrase_cards||[]).length)h+=`<h2>🗣 직원에게 이 화면을 보여주세요</h2>`+P.phrase_cards.map(c=>`<div class="show"><div class="mut small">${esc(c.person)} · ${esc(c.situation)}</div><div class="ko">${esc(c.show_to_staff)}</div><div class="mut">${esc(c.meaning)}</div></div>`).join('');
   if((P.dietary_plan||[]).length)h+=`<h2>🍽 식사 안내</h2>`+P.dietary_plan.map(x=>`<div class="card"><h3>${esc(x.person)} ${(x.needs||[]).map(n=>`<span class="b r">${esc(n)}</span>`).join(' ')}${fn(x.evidence)}</h3><div>${esc(x.guidance)}</div>${x.ask_on_site?`<div class="mut small">현장에서 물어볼 것: ${esc(x.ask_on_site)}</div>`:''}</div>`).join('');
   if((P.interpretation||[]).length)h+=`<h2>📜 이야기</h2>`+P.interpretation.map(x=>`<div class="card"><h3>${esc(x.place)}${fn(x.evidence)}</h3><div>${esc(x.text)}</div>${x.caveats?`<div class="note">※ ${esc(x.caveats)}</div>`:''}</div>`).join('');
   if((P.scenarios||[]).length)h+=`<h2>🔀 혹시 이런 경우엔</h2><div class="card"><ul>${P.scenarios.map(x=>`<li><b>${esc(x.if)}</b> → ${esc(x.then)}${fn(x.evidence)}</li>`).join('')}</ul></div>`;
-  if((P.decisions||[]).length)h+=`<details class="card"><summary>🧭 정보가 불완전할 때 이렇게 판단했어요 (${P.decisions.length})</summary><ul>${P.decisions.map(x=>`<li><b>${esc(x.question)}</b><br>→ ${esc(x.choice)} <span class="mut small">(${esc(x.why)})</span></li>`).join('')}</ul></details>`;
+  const DX=x=>typeof x==='string'?esc(x):`<b>${esc(x.question||x.q||x.topic||'')}</b><br>→ ${esc(x.choice||x.decision||x.answer||JSON.stringify(x))} ${x.why||x.reason?`<span class="mut small">(${esc(x.why||x.reason)})</span>`:''}${x.risk_if_wrong?`<div class="warn small">틀리면: ${esc(x.risk_if_wrong)}</div>`:''}`;
+  if((P.decisions||[]).length)h+=`<details class="card"><summary>🧭 정보가 불완전할 때 이렇게 판단했어요 (${P.decisions.length})</summary><ul>${P.decisions.map(x=>`<li>${DX(x)}</li>`).join('')}</ul></details>`;
   const unc=P.uncertainties||[],apv=P.approvals_needed||[];
   if(unc.length||apv.length)h+=`<h2>✅ 출발 전에</h2><div class="card">${unc.length?`<b>확인이 필요한 것</b><ul>${unc.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${apv.length?`<b>에이전트가 하지 않은 일 (승인 필요)</b><ul>${apv.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}</div>`;
   const TC=R.tool_calls||[],TN={wiki:'위키백과',weather:'날씨',tavily:'웹 검색',brave:'웹 검색',naver:'네이버',tour:'관광공사',place_info:'관광공사 운영정보',accessibility:'무장애 정보',kma_weather:'기상청 예보',weather_warning:'기상특보',festival:'행사·축제',nearby:'주변 장소',encyclopedia:'민족문화대백과',route:'동선(TMAP)'};
@@ -366,7 +372,8 @@ function renderUser(d){
     L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m);
     const pts=MP.points.map(p=>[p.lat,p.lon]);
     MP.points.forEach((p,i)=>L.marker([p.lat,p.lon],{icon:L.divIcon({className:'',html:`<div style="background:#b23a2b;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)">${i+1}</div>`,iconSize:[26,26],iconAnchor:[13,13]})}).addTo(m).bindPopup(`<b>${i+1}. ${esc(p.name)}</b>`));
-    (MP.legs||[]).forEach((l,i)=>{const line=(l.path&&l.path.length>1)?l.path:[pts[i],pts[i+1]];L.polyline(line,{color:'#1f6f6b',weight:5,opacity:.85,dashArray:l.path?null:'6 8'}).addTo(m)});
+    const COL={walk:'#1f6f6b',taxi:'#b23a2b',transit:'#2f5fb2'};
+    (MP.legs||[]).forEach((l,i)=>{const line=(l.path&&l.path.length>1)?l.path:[pts[i],pts[i+1]];L.polyline(line,{color:COL[l.mode||'walk'],weight:5,opacity:.85,dashArray:(l.path&&l.path.length>1)?null:'6 8'}).addTo(m).bindTooltip(`${{walk:'🚶 도보',taxi:'🚕 택시',transit:'🚌 대중교통'}[l.mode||'walk']} ${l.minutes}분`)});
     m.fitBounds(L.latLngBounds(pts).pad(0.25));}
   document.querySelectorAll('sup.fn').forEach(e=>e.onclick=()=>{const t=document.getElementById('src-'+e.dataset.i);if(!t)return;document.querySelectorAll('.src.hl').forEach(x=>x.classList.remove('hl'));t.classList.add('hl');t.scrollIntoView({behavior:'smooth',block:'center'})});
 }

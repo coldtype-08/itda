@@ -2,7 +2,7 @@
 #   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-tmap.yaml --dry-run
 preset:
   name: itda-tmap
-  description: "TMAP: pedestrian route (POST) and POI search for coordinates (GET) only"
+  description: "TMAP: pedestrian/car/transit routes (POST) and POI search (GET) only"
 network_policies:
   itda_tmap:
     name: itda-tmap
@@ -14,6 +14,8 @@ network_policies:
         rules:
           - allow: { method: POST, path: "/tmap/routes/pedestrian" }
           - allow: { method: GET, path: "/tmap/pois" }
+          - allow: { method: POST, path: "/tmap/routes" }
+          - allow: { method: POST, path: "/transit/routes" }
     binaries:
       - { path: /opt/venv/bin/python3 }
       - { path: /opt/venv/bin/python }

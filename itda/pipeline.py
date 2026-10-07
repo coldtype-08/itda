@@ -619,6 +619,10 @@ def _out_of_scope(cfg: Config, guard: PathGuard, audit: Audit, task: str, agent_
     return result
 
 
+def _save_transcript(guard: PathGuard, llm: LLM) -> None:
+    guard.write_text("llm_transcript.json", json.dumps(llm.transcript, ensure_ascii=False, indent=1))
+
+
 def run(cfg: Config) -> dict:
     audit = Audit()
     guard = PathGuard(read_roots=[cfg.input_dir, cfg.task_file], write_root=cfg.output_dir, audit=audit)
@@ -646,6 +650,7 @@ def run(cfg: Config) -> dict:
         agent_plan = plan_agent(cfg, llm, task, docs, tools, signals)
         if agent_plan.get("in_scope") is False:
             f_local.cancel()
+            _save_transcript(guard, llm)
             return _out_of_scope(cfg, guard, audit, task, agent_plan)
         _progress(f"   계획: {agent_plan.get('goal', '')[:80]} / 도구 호출 {len(agent_plan.get('tool_calls') or [])}건")
         if cfg.visitor_type == "auto":
@@ -662,6 +667,10 @@ def run(cfg: Config) -> dict:
         if extra:
             _progress(f"   상황 신호로 추가한 확인: " + ", ".join(f"{c['tool']}({c['args'].get('place') or c['args'].get('topic') or '…'})" for c in extra))
             agent_plan["tool_calls"] = [c for c in (agent_plan.get("tool_calls") or []) if isinstance(c, dict)] + extra
+        mobility = any(r.id in ("elder", "mobility", "pregnant") for r in rules)
+        for c in agent_plan.get("tool_calls") or []:
+            if isinstance(c, dict) and c.get("tool") == "route" and isinstance(c.get("args"), dict):
+                c["args"].setdefault("mobility", mobility)
         ext_docs, tool_log = run_tools(agent_plan, tools, visit_date, max_calls=min(14, 8 + len(extra)))
         small = cfg.model_small if cfg.small_base_url else None
         ext_triaged = triage(cfg, llm, task, visit_date, ext_docs, model=small) if ext_docs else []
@@ -743,6 +752,7 @@ def run(cfg: Config) -> dict:
     }
     guard.write_text("itda_result.json", json.dumps(result, ensure_ascii=False, indent=2))
     guard.write_text("course_draft.md", render_markdown(cfg, plan, resolved, triaged, result["consensus"]))
+    _save_transcript(guard, llm)
     audit.log("done")
     guard.write_text("audit.json", audit.to_json())
     return result
