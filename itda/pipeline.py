@@ -264,7 +264,7 @@ def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: l
         keep = []
         for t in triaged:
             claims = [c for c in (t.get("claims") or []) if c.get("topic") in topics]
-            keep.append({**t, "claims": claims})
+            keep.append({**{k: v for k, v in t.items() if not k.startswith("_")}, "claims": claims})
         return keep
 
     def one(group) -> dict:
@@ -441,6 +441,31 @@ def _cited(plan: dict, resolved: dict) -> set:
     return ids
 
 
+_TOOL_LABEL = {"wiki": "위키백과", "weather": "Open-Meteo 일기예보", "tavily": "웹 검색 (Tavily)",
+               "brave": "웹 검색 (Brave)", "tour": "한국관광공사 TourAPI (공공데이터)", "naver": "네이버 검색"}
+
+
+def _source_meta(t: dict) -> dict:
+    """Human-facing attribution for a source: a readable label, links for external results, and the
+    verbatim quotes that the code verified, so every claim in the UI can show where it came from."""
+    path = t.get("path", "")
+    quotes = [c.get("quote") for c in (t.get("claims") or []) if c.get("quote_verified") and c.get("quote")][:3]
+    if not path.startswith("external/"):
+        return {"label": path.split("/")[-1], "origin": "provided", "urls": [], "quotes": quotes}
+    _, tool, q = (path.split("/", 2) + ["", ""])[:3]
+    urls = []
+    try:
+        data = json.loads(t.get("_text") or "{}")
+    except json.JSONDecodeError:
+        data = {}
+    for r in data.get("results", [])[:3] if isinstance(data, dict) else []:
+        u = r.get("url") or r.get("link")
+        if u:
+            urls.append({"title": r.get("title") or u, "url": u})
+    label = _TOOL_LABEL.get(tool, tool) + (f" · {data.get('kind')}" if tool == "naver" and data.get("kind") else "")
+    return {"label": f"{label}: {q}", "origin": "external", "tool": tool, "urls": urls, "quotes": quotes}
+
+
 def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict], consensus: list | None = None) -> str:
     id2path = {t["id"]: t["path"] for t in triaged}
 
@@ -555,6 +580,9 @@ def run(cfg: Config) -> dict:
         ext_docs, tool_log = run_tools(agent_plan, tools, visit_date)
         small = cfg.model_small if cfg.small_base_url else None
         ext_triaged = triage(cfg, llm, task, visit_date, ext_docs, model=small) if ext_docs else []
+        texts = {d.id: d.text for d in ext_docs}
+        for t in ext_triaged:
+            t["_text"] = texts.get(t["id"], "")
         triaged = f_local.result() + ext_triaged
     docs = docs + ext_docs
     _progress(f"③ 검증 에이전트 {len(RESOLVE_GROUPS)}개 병렬 시작 ({cfg.model_main})")
@@ -612,9 +640,10 @@ def run(cfg: Config) -> dict:
         "agent_plan": agent_plan,
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
-        "sources": [{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",
-                                            "doc_date", "content_date", "scope", "integrity",
-                                            "trust", "trust_reason", "contains_instructions_to_agent")} for t in triaged],
+        "sources": [{**{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",
+                                               "doc_date", "content_date", "scope", "integrity",
+                                               "trust", "trust_reason", "contains_instructions_to_agent")},
+                     **_source_meta(t)} for t in triaged],
     }
     guard.write_text("itda_result.json", json.dumps(result, ensure_ascii=False, indent=2))
     guard.write_text("course_draft.md", render_markdown(cfg, plan, resolved, triaged, result["consensus"]))

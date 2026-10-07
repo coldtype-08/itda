@@ -150,53 +150,123 @@ class Handler(BaseHTTPRequestHandler):
 
 
 PAGE = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>ItDA 잇다</title>
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>잇다 ItDA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#faf8f4;--card:#fff;--fg:#1f1d1a;--mut:#6b675f;--line:#e6e1d8;--acc:#9b3b2a;--ok:#2f6f4f;--warn:#a5631a;--bad:#a32d2d}
-@media (prefers-color-scheme:dark){:root{--bg:#171614;--card:#211f1c;--fg:#ece8e1;--mut:#a29c92;--line:#36322d;--acc:#e0806b;--ok:#7cc4a0;--warn:#e5a65a;--bad:#f09595}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.6 -apple-system,"Apple SD Gothic Neo","Noto Sans KR",sans-serif}
-main{max-width:1000px;margin:0 auto;padding:24px 16px 64px}h1{font-size:28px;margin:0}h2{font-size:18px;margin:28px 0 10px}
-.sub{color:var(--mut);margin:4px 0 20px}.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin:12px 0}
-.row{display:flex;gap:10px;flex-wrap:wrap}.opt{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:10px;padding:12px 18px;cursor:pointer;font-size:16px}
-.opt.on{border-color:var(--acc);box-shadow:0 0 0 2px var(--acc) inset}.go{background:var(--acc);color:#fff;border:0;border-radius:10px;padding:12px 24px;font-size:16px;cursor:pointer}
-.go:disabled{opacity:.5}pre{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:10px;max-height:260px;overflow:auto;font-size:12px;white-space:pre-wrap}
+:root{--bg:#f6f2e9;--paper:#fffdf8;--card:#fff;--fg:#1d1b18;--mut:#6f685d;--line:#e4dccd;--acc:#b23a2b;--acc2:#1f6f6b;--gold:#c99a2e;--ok:#2f6f4f;--warn:#a5631a;--bad:#a32d2d;--chip:#f1ebdf}
+@media (prefers-color-scheme:dark){:root{--bg:#141311;--paper:#1b1a17;--card:#211f1c;--fg:#ece6dc;--mut:#a59d90;--line:#36322c;--acc:#e0806b;--acc2:#6fc2bb;--gold:#e0b65a;--ok:#7cc4a0;--warn:#e5a65a;--bad:#f09595;--chip:#2a2723}}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.65 "Noto Sans KR",-apple-system,"Apple SD Gothic Neo",sans-serif}
+main{max-width:880px;margin:0 auto;padding:20px 16px 80px}
+.brand{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}.brand h1{font:700 30px/1.2 "Noto Serif KR",serif;margin:0}
+.brand .en{color:var(--acc);font-weight:700;letter-spacing:.08em}.tag-line{color:var(--mut);margin:4px 0 18px}
+h2{font:700 20px/1.3 "Noto Serif KR",serif;margin:30px 0 12px}h3{margin:0 0 4px;font-size:17px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:12px 0}
+.panel{background:var(--paper);border:1px solid var(--line);border-radius:18px;padding:18px}
+.seg{display:flex;background:var(--chip);border-radius:12px;padding:4px;gap:4px;margin-bottom:14px;flex-wrap:wrap}
+.seg button{flex:1;min-width:140px;border:0;background:transparent;color:var(--fg);padding:10px;border-radius:9px;font:inherit;cursor:pointer}
+.seg button.on{background:var(--card);box-shadow:0 1px 3px rgba(0,0,0,.08);font-weight:700}
+.lbl{font-weight:700;margin:12px 0 6px}.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{border:1px solid var(--line);background:var(--card);color:var(--fg);border-radius:999px;padding:8px 14px;cursor:pointer;font:inherit}
+.chip.on{border-color:var(--acc);background:color-mix(in srgb,var(--acc) 10%,var(--card));color:var(--acc);font-weight:700}
+textarea,input[type=date]{width:100%;font:inherit;padding:10px 12px;border-radius:10px;border:1px solid var(--line);background:var(--card);color:var(--fg)}
+.go{width:100%;margin-top:16px;background:var(--acc);color:#fff;border:0;border-radius:12px;padding:14px;font:700 17px "Noto Sans KR",sans-serif;cursor:pointer}
+.go:disabled{opacity:.55;cursor:wait}.mut{color:var(--mut)}.small{font-size:13px}
+.steps{display:flex;gap:6px;margin:16px 0 4px}.steps div{flex:1;height:6px;border-radius:3px;background:var(--line)}.steps div.on{background:var(--acc2)}
+.tabs{display:flex;gap:18px;border-bottom:1px solid var(--line);margin:28px 0 4px}.tabs button{border:0;background:none;color:var(--mut);font:700 15px inherit;padding:10px 0;cursor:pointer;border-bottom:3px solid transparent}
+.tabs button.on{color:var(--fg);border-color:var(--acc)}
+.hero{background:linear-gradient(135deg,color-mix(in srgb,var(--acc) 8%,var(--paper)),var(--paper));border:1px solid var(--line);border-radius:18px;padding:20px}
+.hero h2{margin:0 0 8px;font-size:23px}.badges{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.b{font-size:12.5px;border-radius:999px;padding:3px 10px;background:var(--chip);color:var(--mut)}.b.r{background:color-mix(in srgb,var(--acc) 14%,var(--card));color:var(--acc)}.b.g{background:color-mix(in srgb,var(--ok) 14%,var(--card));color:var(--ok)}
+.trust{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:12px}.trust div{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;text-align:center}.trust b{display:block;font-size:22px;color:var(--acc2)}
+.phone{max-width:380px;margin:0 auto;background:var(--fg);color:var(--paper);border-radius:28px;padding:22px 20px;box-shadow:0 10px 30px rgba(0,0,0,.18)}
+.phone ul{margin:0;padding-left:18px}.phone li{margin:6px 0}.phone .t{font:700 15px "Noto Serif KR",serif;color:var(--gold);margin-bottom:8px}
+.tl{position:relative;margin-left:8px;border-left:2px solid var(--line);padding-left:18px}.tl .it{position:relative;margin:0 0 16px}
+.tl .it:before{content:"";position:absolute;left:-26px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--acc);border:3px solid var(--bg)}
+.time{display:inline-block;font-weight:700;color:var(--acc);font-size:14px}.note{font-size:14px;color:var(--warn);margin-top:4px}
+.show{border:2px solid var(--acc);border-radius:16px;padding:16px;margin:12px 0;background:var(--card)}.show .ko{font:700 24px/1.45 "Noto Sans KR",sans-serif;margin:6px 0}
+sup.fn{cursor:pointer;color:var(--acc2);font-weight:700;margin-left:2px}sup.fn:hover{text-decoration:underline}
+.src{display:flex;gap:10px;padding:10px 0;border-top:1px dashed var(--line)}.src:first-child{border-top:0}.src .n{min-width:28px;height:28px;border-radius:50%;background:var(--chip);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:13px}
+.src.hl{background:color-mix(in srgb,var(--gold) 16%,transparent);border-radius:10px}.q{font-size:13.5px;color:var(--mut);border-left:3px solid var(--gold);padding-left:8px;margin:4px 0}
+.src a{color:var(--acc2);word-break:break-all;font-size:13.5px}
+details{margin-top:8px}summary{cursor:pointer;color:var(--mut)}
+pre{background:var(--paper);border:1px solid var(--line);border-radius:10px;padding:10px;max-height:240px;overflow:auto;font-size:12px;white-space:pre-wrap}
 table{width:100%;border-collapse:collapse;font-size:14px}td,th{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}
 .tag{display:inline-block;font-size:12px;border:1px solid var(--line);border-radius:999px;padding:1px 8px;margin:2px 2px 0 0;color:var(--mut)}
-.bad{color:var(--bad)}.ok{color:var(--ok)}.warn{color:var(--warn)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.bad{color:var(--bad)}.ok{color:var(--ok)}.warn{color:var(--warn)}.sub{color:var(--mut)}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}.stat b{font-size:24px;display:block}
-ul{margin:6px 0;padding-left:20px}
+ul{padding-left:20px}
+@media (max-width:560px){.trust{grid-template-columns:1fr 1fr 1fr}.hero h2{font-size:20px}.show .ko{font-size:21px}}
 </style></head><body><main>
-<h1>ItDA 잇다</h1><p class="sub">흩어진 기록을 검증해 나에게 맞는 문화 코스 초안으로 잇습니다 · Nemotron × OpenShell</p>
-<div class="row" id="mode" style="margin:8px 0">
-<button class="opt on" data-v="challenge">📂 챌린지 자료로 실행</button><button class="opt" data-v="live">✏️ 직접 입력 (실제 장소 · 실시간 API)</button></div>
-<div class="card" id="live" hidden><b>무엇을 도와드릴까요?</b>
-<textarea id="req" rows="3" style="width:100%;margin:8px 0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)" placeholder="예) 토요일에 부모님 모시고 경복궁이랑 근처 전통시장 반나절 코스 짜줘"></textarea>
-<div class="row"><label>방문일 <input type="date" id="date" style="font:inherit"></label></div>
-<textarea id="comp" rows="2" style="width:100%;margin:8px 0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)" placeholder="동행자·조건 예) 아버지 무릎이 안 좋아 계단 어려움, 어머니 비건, 7살 아이 땅콩 알레르기"></textarea>
-<div class="sub">입력한 내용은 이번 요청에만 쓰이고, 예약·연락은 하지 않습니다.</div></div>
-<div class="card"><div><b>1. 누구세요?</b></div><div class="row" id="vis" style="margin:8px 0 14px">
-<button class="opt on" data-v="auto">🤖 자동 판단</button><button class="opt" data-v="foreign">🌏 외국인 방문객</button><button class="opt" data-v="korean">🇰🇷 한국인</button></div>
-<div><b>2. 무엇이 궁금하세요?</b></div><div class="row" id="int" style="margin:8px 0 14px">
-<button class="opt on" data-v="history">📜 역사적 맥락</button><button class="opt on" data-v="family">👨‍👩‍👧 가족·동행</button><button class="opt" data-v="kculture">🎤 K-컬처</button></div>
-<button class="go" id="go">코스 초안 만들기</button> <span id="st" class="sub"></span>
-<pre id="log" hidden></pre></div>
-<div id="res"></div>
+<div class="brand"><h1>잇다</h1><span class="en">ItDA</span></div>
+<p class="tag-line">흩어진 기록을 믿을 수 있는 하루로 잇습니다 — 공식 공지·현장 기록·검색 결과를 스스로 검증해 나에게 맞는 문화 코스를 만들어요.</p>
+<div class="panel">
+ <div class="seg" id="mode"><button class="on" data-v="challenge">📂 주어진 자료로 만들기</button><button data-v="live">✏️ 내 여행 직접 입력</button></div>
+ <div id="live" hidden>
+  <div class="lbl">어디로, 무엇을 하고 싶으세요?</div>
+  <textarea id="req" rows="3" placeholder="예) 토요일에 부모님 모시고 경복궁이랑 근처 전통시장 반나절 코스 짜줘"></textarea>
+  <div class="lbl">언제 가세요?</div><input type="date" id="date">
+  <div class="lbl">함께 가는 분과 조건</div>
+  <textarea id="comp" rows="2" placeholder="예) 아버지 무릎이 안 좋아 계단이 어려움, 어머니 비건, 7살 아이 땅콩 알레르기"></textarea>
+  <div class="mut small">입력한 내용은 이번 코스를 만드는 데만 쓰이고, 에이전트는 예약·연락·결제를 하지 않습니다.</div>
+ </div>
+ <div class="lbl">누가 가시나요?</div>
+ <div class="chips" id="vis"><button class="chip on" data-v="auto">🤖 알아서 판단</button><button class="chip" data-v="foreign">🌏 해외 방문객</button><button class="chip" data-v="korean">🇰🇷 한국인</button></div>
+ <div class="lbl">무엇이 궁금하세요? <span class="mut small">(여러 개 선택)</span></div>
+ <div class="chips" id="int"><button class="chip on" data-v="history">📜 역사 이야기</button><button class="chip on" data-v="family">👨‍👩‍👧 가족·동행 배려</button><button class="chip" data-v="kculture">🎤 K-컬처</button></div>
+ <button class="go" id="go">코스 만들기</button>
+ <div id="prog" hidden><div class="steps"><div></div><div></div><div></div><div></div><div></div></div><div id="st" class="mut small"></div></div>
+</div>
+<div class="tabs" id="tabs" hidden><button class="on" data-v="user">여행 코스</button><button data-v="dev">검증 과정 (개발자 보기)</button></div>
+<div id="res"></div><div id="dev" hidden></div>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let visitor='auto',mode='challenge';
-document.querySelectorAll('#mode .opt').forEach(b=>b.onclick=()=>{document.querySelectorAll('#mode .opt').forEach(x=>x.classList.remove('on'));b.classList.add('on');mode=b.dataset.v;$('#live').hidden=mode!=='live'});
-document.querySelectorAll('#vis .opt').forEach(b=>b.onclick=()=>{document.querySelectorAll('#vis .opt').forEach(x=>x.classList.remove('on'));b.classList.add('on');visitor=b.dataset.v});
-document.querySelectorAll('#int .opt').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
+const pick=(sel,single,cb)=>document.querySelectorAll(sel+' button').forEach(b=>b.onclick=()=>{if(single)document.querySelectorAll(sel+' button').forEach(x=>x.classList.remove('on'));b.classList.toggle('on',single?true:!b.classList.contains('on'));cb&&cb(b)});
+pick('#mode',true,b=>{mode=b.dataset.v;$('#live').hidden=mode!=='live'});pick('#vis',true,b=>visitor=b.dataset.v);pick('#int',false);
+pick('#tabs',true,b=>{$('#res').hidden=b.dataset.v!=='user';$('#dev').hidden=b.dataset.v!=='dev'});
+const STEPS=[['①','자료를 모으고 있어요'],['②','무엇을 확인할지 계획하고 검색하고 있어요'],['③','자료끼리 비교해서 믿을 만한지 따지고 있어요'],['④','상황에 맞는 코스를 짜고 있어요'],['⑤','모든 문장의 근거를 다시 확인하고 있어요']];
 $('#go').onclick=async()=>{
-  const interests=[...document.querySelectorAll('#int .opt.on')].map(b=>b.dataset.v);
-  if(!interests.length){$('#st').textContent='관심사를 하나 이상 고르세요';return}
-  $('#go').disabled=true;$('#res').innerHTML='';$('#log').hidden=false;$('#log').textContent='';
+  const interests=[...document.querySelectorAll('#int .on')].map(b=>b.dataset.v);
+  if(!interests.length){$('#prog').hidden=false;$('#st').textContent='궁금한 주제를 하나 이상 골라 주세요';return}
+  if(mode==='live'&&$('#req').value.trim().length<5){$('#prog').hidden=false;$('#st').textContent='어디로 무엇을 하고 싶은지 적어 주세요';return}
+  $('#go').disabled=true;$('#res').innerHTML='';$('#dev').innerHTML='';$('#tabs').hidden=true;$('#prog').hidden=false;
   const r=await fetch('run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,interests,mode,request:$('#req').value,date:$('#date').value,companions:$('#comp').value})});
   const j=await r.json();if(!r.ok){$('#st').textContent=j.error;$('#go').disabled=false;return}
-  const poll=async()=>{const s=await (await fetch('status?job='+j.job)).json();
-    $('#log').textContent=s.lines.join('\n');$('#log').scrollTop=1e9;$('#st').textContent=(s.done?(s.ok?'완료':'실패'):'실행 중… ')+s.elapsed+'s';
-    if(!s.done)return setTimeout(poll,1000);$('#go').disabled=false;if(s.ok)render(await (await fetch('result?job='+j.job)).json())};poll()};
-function render(d){
+  const poll=async()=>{const s=await (await fetch('status?job='+j.job)).json();const log=s.lines.join('\n');
+    let k=0;STEPS.forEach((x,i)=>{if(log.includes(x[0]))k=i+1});if(s.done&&s.ok)k=5;
+    document.querySelectorAll('.steps div').forEach((d,i)=>d.classList.toggle('on',i<k));
+    $('#st').textContent=s.done?(s.ok?`완료 · ${s.elapsed}초`:'실행 중 문제가 생겼어요. 검증 과정 탭에서 로그를 확인하세요.'):`${(STEPS[Math.max(0,k-1)]||STEPS[0])[1]} · ${s.elapsed}초`;
+    window._log=log;if(!s.done)return setTimeout(poll,1000);$('#go').disabled=false;
+    if(s.ok){const d=await (await fetch('result?job='+j.job)).json();renderUser(d);renderDev(d);$('#dev').innerHTML+=`<h2>실행 로그</h2><pre>${esc(log)}</pre>`;$('#tabs').hidden=false}
+    else{$('#dev').innerHTML=`<pre>${esc(log)}</pre>`;$('#tabs').hidden=false;$('#dev').hidden=false;$('#res').hidden=true}};poll()};
+const TYPE={official_notice:'공식 공지',field_survey:'현장 조사',structured_data:'방문단 정보',internal_guideline:'운영 규칙',interpretation_draft:'해설 자료',community_post:'지역 게시판',promotional:'홍보물',personal_blog:'개인 블로그',advertisement:'광고',archive:'과거 기록',web_search:'웹 검색',public_api:'공공 API',external_instruction:'의심되는 외부 지시',other:'기타'};
+const TRUST={use:['믿을 수 있음','g'],use_with_caution:['주의해서 사용',''],background_only:['참고용',''],ignore:['사용 안 함','r']};
+function renderUser(d){
+  const R=d.result||{},P=R.plan||{},V=R.resolved||{},S={};(R.sources||[]).forEach(s=>S[s.id]=s);
+  const order=[],num={};const fn=ids=>(ids||[]).filter(i=>S[i]).map(i=>{if(!(i in num)){order.push(i);num[i]=order.length}return `<sup class="fn" data-i="${esc(i)}">[${num[i]}]</sup>`}).join('');
+  const Q=(R.consensus||[]).map(g=>(g.quorum||{}).status),conf=Q.filter(x=>x==='confirmed').length;
+  const used=(R.sources||[]).filter(s=>s.trust!=='ignore').length;
+  let h=`<div class="hero"><h2>${esc(P.title)}</h2><div>${esc(P.summary)}</div><div class="badges"><span class="b r">초안 · 예약/연락하지 않음</span>${R.visit_date?`<span class="b">📅 ${esc(R.visit_date)}</span>`:''}<span class="b">${{foreign:'🌏 해외 방문객',korean:'🇰🇷 한국인'}[R.lens?.visitor_type]||''}</span></div>
+   <div class="trust"><div><b>${used}/${(R.sources||[]).length}</b>사용한 자료</div><div><b>${conf}</b>교차 확인된 정보</div><div><b>${(V.untrusted_instructions||[]).length}</b>무시한 의심 지시</div></div></div>`;
+  if((P.day_card||[]).length)h+=`<h2>📱 오늘의 카드</h2><div class="phone"><div class="t">${esc(P.title)}</div><ul>${P.day_card.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div><p class="mut small" style="text-align:center">화면을 캡처해 두면 현장에서 바로 볼 수 있어요.</p>`;
+  if((P.itinerary||[]).length)h+=`<h2>🗺 일정</h2><div class="tl">${P.itinerary.map(i=>`<div class="it"><span class="time">${esc(i.time)}</span><h3>${esc(i.place)}${fn(i.evidence)}</h3><div>${esc(i.activity)}</div>${i.access_notes?`<div class="note">♿ ${esc(i.access_notes)}</div>`:''}</div>`).join('')}</div>`;
+  if((P.phrase_cards||[]).length)h+=`<h2>🗣 직원에게 이 화면을 보여주세요</h2>`+P.phrase_cards.map(c=>`<div class="show"><div class="mut small">${esc(c.person)} · ${esc(c.situation)}</div><div class="ko">${esc(c.show_to_staff)}</div><div class="mut">${esc(c.meaning)}</div></div>`).join('');
+  if((P.dietary_plan||[]).length)h+=`<h2>🍽 식사 안내</h2>`+P.dietary_plan.map(x=>`<div class="card"><h3>${esc(x.person)} ${(x.needs||[]).map(n=>`<span class="b r">${esc(n)}</span>`).join(' ')}${fn(x.evidence)}</h3><div>${esc(x.guidance)}</div>${x.ask_on_site?`<div class="mut small">현장에서 물어볼 것: ${esc(x.ask_on_site)}</div>`:''}</div>`).join('');
+  if((P.interpretation||[]).length)h+=`<h2>📜 이야기</h2>`+P.interpretation.map(x=>`<div class="card"><h3>${esc(x.place)}${fn(x.evidence)}</h3><div>${esc(x.text)}</div>${x.caveats?`<div class="note">※ ${esc(x.caveats)}</div>`:''}</div>`).join('');
+  if((P.scenarios||[]).length)h+=`<h2>🔀 혹시 이런 경우엔</h2><div class="card"><ul>${P.scenarios.map(x=>`<li><b>${esc(x.if)}</b> → ${esc(x.then)}${fn(x.evidence)}</li>`).join('')}</ul></div>`;
+  if((P.decisions||[]).length)h+=`<details class="card"><summary>🧭 정보가 불완전할 때 이렇게 판단했어요 (${P.decisions.length})</summary><ul>${P.decisions.map(x=>`<li><b>${esc(x.question)}</b><br>→ ${esc(x.choice)} <span class="mut small">(${esc(x.why)})</span></li>`).join('')}</ul></details>`;
+  const unc=P.uncertainties||[],apv=P.approvals_needed||[];
+  if(unc.length||apv.length)h+=`<h2>✅ 출발 전에</h2><div class="card">${unc.length?`<b>확인이 필요한 것</b><ul>${unc.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}${apv.length?`<b>에이전트가 하지 않은 일 (승인 필요)</b><ul>${apv.map(x=>`<li>${esc(x)}</li>`).join('')}</ul>`:''}</div>`;
+  const srcRow=(i,n)=>{const s=S[i],t=TRUST[s.trust]||['',''];return `<div class="src" id="src-${esc(i)}"><div class="n">${n}</div><div><b>${esc(s.label||s.path)}</b> <span class="b">${esc(TYPE[s.source_type]||s.source_type||'')}</span> <span class="b ${t[1]}">${t[0]}</span>${s.content_date||s.doc_date?` <span class="b">${esc(s.content_date||s.doc_date)}</span>`:''}
+     ${(s.quotes||[]).map(q=>`<div class="q">“${esc(q)}”</div>`).join('')}${(s.urls||[]).map(u=>`<div><a href="${esc(u.url)}" target="_blank" rel="noopener">${esc(u.title)}</a></div>`).join('')}${s.trust_reason?`<div class="mut small">${esc(s.trust_reason)}</div>`:''}</div></div>`};
+  h+=`<h2>📚 출처</h2><div class="card">${order.length?order.map((i,k)=>srcRow(i,k+1)).join(''):'<span class="mut">인용된 출처가 없습니다.</span>'}</div>`;
+  const rest=(R.sources||[]).filter(s=>!(s.id in num));
+  if(rest.length)h+=`<details class="card"><summary>참고했지만 코스에 쓰지 않은 자료 ${rest.length}개 · 왜 뺐는지 보기</summary>${rest.map(s=>{const t=TRUST[s.trust]||['',''];return `<div class="src"><div class="n">–</div><div><b>${esc(s.label||s.path)}</b> <span class="b">${esc(TYPE[s.source_type]||s.source_type||'')}</span> <span class="b ${t[1]}">${t[0]}</span><div class="mut small">${esc(s.trust_reason||'')}</div></div></div>`}).join('')}</details>`;
+  h+=`<p class="mut small">🛡 이 코스는 NVIDIA OpenShell 보안 샌드박스 안에서 Nemotron이 만들었습니다. 허용된 공식 API 외에는 외부로 아무것도 보내지 않으며, 자료 속 의심스러운 지시는 따르지 않습니다.</p>`;
+  $('#res').innerHTML=h;$('#res').hidden=false;$('#dev').hidden=true;
+  document.querySelectorAll('sup.fn').forEach(e=>e.onclick=()=>{const t=document.getElementById('src-'+e.dataset.i);if(!t)return;document.querySelectorAll('.src.hl').forEach(x=>x.classList.remove('hl'));t.classList.add('hl');t.scrollIntoView({behavior:'smooth',block:'center'})});
+}
+function renderDev(d){
   const R=d.result||{},P=R.plan||{},V=R.resolved||{},A=d.audit||[],src={};(R.sources||[]).forEach(s=>src[s.id]=s.path);
   const ev=ids=>(ids||[]).map(i=>`<span class="tag">${esc(src[i]||i)}</span>`).join('');
   const cnt=k=>A.filter(e=>e.kind===k).length;
@@ -218,7 +288,7 @@ function render(d){
   h+=`<h2>확인 필요 · 승인 필요</h2><div class="card"><b class="warn">확인 필요</b>${li((P.uncertainties||[]).map(esc))}<b>승인 필요 (수행하지 않음)</b>${li((P.approvals_needed||[]).map(esc))}</div>`;
   h+=`<h2>🛡 보안 패널</h2><div class="grid"><div class="stat"><b>${cnt('file_read')}</b>허용된 파일 읽기</div><div class="stat"><b class="bad">${cnt('blocked_read')+cnt('blocked_write')}</b>차단된 파일 접근</div><div class="stat"><b class="bad">${(V.untrusted_instructions||[]).length}</b>무시한 외부 지시</div><div class="stat"><b>${(V.excluded_sources||[]).length}</b>제외한 자료</div><div class="stat"><b class="ok">0</b>외부 전송·예약·발송</div></div>`;
   h+=`<div class="card"><b class="bad">따르지 않은 외부 지시</b>${li((V.untrusted_instructions||[]).map(x=>`<span class="tag">${esc(src[x.doc]||x.doc)}</span> ${esc(x.summary)}`))}<b>제외한 자료</b>${li((V.excluded_sources||[]).map(x=>`<span class="tag">${esc(src[x.doc]||x.doc)}</span> ${esc(x.reason)}`))}</div>`;
-  $('#res').innerHTML=h}
+  $('#dev').innerHTML=h}
 </script></main></body></html>"""
 
 
