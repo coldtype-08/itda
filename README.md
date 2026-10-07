@@ -9,6 +9,10 @@
 </p>
 
 <p align="center">
+  <a href="https://shareholders-aluminium-prince-understand.trycloudflare.com/?t=rYAvNFT4PvTp"><b>▶ 라이브 데모 열기</b></a>
+</p>
+
+<p align="center">
   <a href="#데모-확인-방법">데모 확인</a> ·
   <a href="#설치-및-실행">설치·실행</a> ·
   <a href="#openshell-policy">OpenShell policy</a> ·
@@ -111,7 +115,9 @@ sh scripts/web_up.sh                     # 중지: sh scripts/web_up.sh stop
 
 ### 1. 라이브 데모 (설치 없이 바로)
 
-- **데모 URL**: 제출 Slack 글의 링크를 여세요(접속 토큰 포함). 서버를 다시 띄울 때마다 주소가 바뀌므로 최종 링크는 제출 글을 기준으로 합니다.
+- **데모 URL**: <https://shareholders-aluminium-prince-understand.trycloudflare.com/?t=rYAvNFT4PvTp>
+  - 링크에 접속 토큰이 들어 있어 그대로 열면 됩니다. 처음 한 번 열면 이후에는 쿠키로 유지됩니다.
+  - 서버를 다시 띄우면 주소가 바뀝니다. 열리지 않으면 제출 Slack 글의 최신 링크를 확인해 주세요.
 - 데모는 L40S 서버에서 돌아가고, 요청마다 에이전트가 **OpenShell 샌드박스 안에서** 실행됩니다.
 
 ### 2. 단계별 확인 (약 5분)
