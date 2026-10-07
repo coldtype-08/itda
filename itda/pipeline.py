@@ -59,6 +59,53 @@ def _force_untrusted(doc: Doc, r: dict) -> dict:
     return r
 
 
+_AUTHORITY = {"official_notice": 1.0, "field_survey": 0.9, "structured_data": 0.9, "internal_guideline": 0.9,
+              "community_post": 0.6, "interpretation_draft": 0.5, "web_search": 0.5, "public_api": 0.5,
+              "archive": 0.3, "promotional": 0.2, "personal_blog": 0.2, "advertisement": 0.1,
+              "external_instruction": 0.0}
+_INTEGRITY = {"intact": 1.0, "partial": 0.7, "estimated": 0.7, "ocr_uncertain": 0.5, "damaged": 0.5}
+_TRUST = {"use": 1.0, "use_with_caution": 0.8, "background_only": 0.4, "ignore": 0.0}
+
+
+def _norm(s: str) -> str:
+    return re.sub(r"[\s\"'“”‘’`·,.()\[\]]+", "", s or "").lower()
+
+
+def verify_and_score(doc: Doc, r: dict) -> dict:
+    """Fact layer, done in code: a claim counts as a quoted fact only if its quote appears verbatim
+    in the source. Then turn the source's qualities into a number the consensus step can compare."""
+    text = _norm(doc.text)
+    st = str(r.get("source_type", "")).split("/")[0].strip()
+    base = (_AUTHORITY.get(st, 0.4) * _INTEGRITY.get(r.get("integrity"), 0.8)
+            * _TRUST.get(r.get("trust"), 0.6))
+    for c in r.get("claims") or []:
+        q = _norm(c.get("quote", ""))
+        c["quote_verified"] = bool(q) and q in text
+        c["evidence_score"] = round(base * (1.0 if c["quote_verified"] else 0.5), 2)
+    return r
+
+
+def consensus_table(triaged: list[dict], topics: list[str] | None = None) -> list[dict]:
+    """Group candidate values by (topic, subject, attribute) and rank them by evidence score."""
+    groups: dict[tuple, list] = {}
+    for t in triaged:
+        for c in t.get("claims") or []:
+            if topics and c.get("topic") not in topics:
+                continue
+            key = (c.get("topic"), _norm(c.get("subject", ""))[:24], (c.get("attribute") or "").lower())
+            groups.setdefault(key, []).append({
+                "doc": t["id"], "value": c.get("value") or c.get("statement"), "applies_to": c.get("applies_to"),
+                "score": c.get("evidence_score"), "quote_verified": c.get("quote_verified"),
+                "source_type": t.get("source_type"), "content_date": t.get("content_date")})
+    out = []
+    for (topic, _, attr), cands in groups.items():
+        cands.sort(key=lambda x: -(x["score"] or 0))
+        values = {_norm(str(x["value"])) for x in cands}
+        out.append({"topic": topic, "attribute": attr,
+                    "agree": len(values) == 1, "candidates": cands})
+    return out
+
+
 def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[Doc]) -> list[dict]:
     def one(doc: Doc) -> dict:
         user = prompts.TRIAGE_USER.format(
@@ -76,7 +123,7 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
         # Deterministic signal wins over the model: hinted docs are always treated as untrusted input.
         if doc.instruction_hints and out.get("contains_instructions_to_agent"):
             out["reliability"] = "untrusted"
-        return _force_untrusted(doc, {"id": doc.id, "path": doc.path, **out})
+        return verify_and_score(doc, _force_untrusted(doc, {"id": doc.id, "path": doc.path, **out}))
 
     def batch(chunk: list[Doc]) -> list[dict]:
         body = "\n\n".join(prompts.TRIAGE_BATCH_DOC.format(
@@ -104,11 +151,11 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
                 continue
             if d.instruction_hints and r.get("contains_instructions_to_agent"):
                 r["reliability"] = "untrusted"
-            res.append(_force_untrusted(d, {**r, "id": d.id, "path": d.path}))
+            res.append(verify_and_score(d, _force_untrusted(d, {**r, "id": d.id, "path": d.path})))
         _progress(f"  분류 완료 {chunk[0].id}–{chunk[-1].id} ({len(chunk)}건)")
         return res
 
-    if cfg.triage_mode == "per_doc":
+    if cfg.triage_mode == "per_doc" or (cfg.fast_base_url and cfg.triage_mode != "batch_force"):
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             results = list(pool.map(one, docs))
     else:
@@ -130,6 +177,11 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
     for r in results:
         if r.get("contains_instructions_to_agent"):
             llm.audit.log("untrusted_instruction", doc=r["path"], summary=r.get("instruction_summary", ""))
+    claims = [c for r in results for c in (r.get("claims") or [])]
+    ok = sum(1 for c in claims if c.get("quote_verified"))
+    if claims:
+        _progress(f"   원문 인용 확인: {ok}/{len(claims)} claims (나머지는 점수 절반)")
+        llm.audit.log("quote_check", verified=ok, total=len(claims))
     return results
 
 
@@ -142,9 +194,6 @@ RESOLVE_GROUPS = [
 
 def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: list[dict]) -> dict:
     """Topic-specialised verifier agents run in parallel, then merge."""
-    user = prompts.RESOLVE_USER.format(
-        task=task, visit_date=visit_date or "미상",
-        triage=json.dumps(triaged, ensure_ascii=False, indent=1))
     empty = {"visit_date": visit_date, "facts": [], "people": [], "rules": [],
              "excluded_sources": [], "untrusted_instructions": [], "open_questions": []}
 
@@ -163,6 +212,7 @@ def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: l
         view = focused(topics)
         n_claims = sum(len(t["claims"]) for t in view)
         u = prompts.RESOLVE_USER.format(task=task, visit_date=visit_date or "미상",
+                                        consensus=json.dumps(consensus_table(triaged, topics), ensure_ascii=False, indent=1),
                                         triage=json.dumps(view, ensure_ascii=False, indent=1))
         out = llm.chat_json(system, u, cfg.model_main, f"resolve:{name}", mock=lambda: dict(empty), temperature=0)
         if n_claims and not out.get("facts"):
@@ -314,7 +364,7 @@ def _cited(plan: dict, resolved: dict) -> set:
     return ids
 
 
-def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]) -> str:
+def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict], consensus: list | None = None) -> str:
     id2path = {t["id"]: t["path"] for t in triaged}
 
     def ev(ids) -> str:
@@ -373,6 +423,15 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
         out.append(f"| {f.get('topic', '')}: {f.get('subject', '')} | {f.get('decision', '')} | {f.get('status', '')} | "
                    f"**{f.get('decided_by', '')}** — {f.get('rationale', '')} | {over or '-'} |")
 
+    conflicts = [g for g in (consensus or []) if len(g["candidates"]) > 1]
+    if conflicts:
+        out += ["", f"## {L('합의 표 (원문 인용 × 근거 점수)', 'Consensus (verbatim quote × evidence score)')}", "",
+                f"| {L('주제·속성', 'Topic · attribute')} | {L('후보 (점수 높은 순)', 'Candidates (by score)')} | {L('일치', 'Agree')} |",
+                "|---|---|---|"]
+        for g in conflicts:
+            cands = "<br>".join(f"**{c['value']}** `{id2path.get(c['doc'], c['doc'])}` {c['score']} "
+                                f"{'✓' if c['quote_verified'] else '✗'}" for c in g["candidates"])
+            out.append(f"| {g['topic']} · {g['attribute']} | {cands} | {'✓' if g['agree'] else L('충돌', 'conflict')} |")
     out += ["", f"## {L('자료 신뢰 판정', 'Source trust verdicts')}", "",
             f"| {L('자료', 'Source')} | {L('종류', 'Type')} | {L('판정', 'Verdict')} | {L('이유', 'Reason')} |",
             "|---|---|---|---|"]
@@ -438,6 +497,7 @@ def run(cfg: Config) -> dict:
         "plan": plan,
         "resolved": resolved,
         "grounding_removed": removed,
+        "consensus": consensus_table(triaged),
         "agent_plan": agent_plan,
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
@@ -446,7 +506,7 @@ def run(cfg: Config) -> dict:
                                             "trust", "trust_reason", "contains_instructions_to_agent")} for t in triaged],
     }
     guard.write_text("itda_result.json", json.dumps(result, ensure_ascii=False, indent=2))
-    guard.write_text("course_draft.md", render_markdown(cfg, plan, resolved, triaged))
+    guard.write_text("course_draft.md", render_markdown(cfg, plan, resolved, triaged, result["consensus"]))
     audit.log("done")
     guard.write_text("audit.json", audit.to_json())
     return result
