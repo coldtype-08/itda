@@ -1,0 +1,72 @@
+# ItDA — OpenShell sandbox policy (제출용 · 최소 권한)
+#
+# 샌드박스 안 배치 (scripts/sandbox_run.sh 가 이 구조로 올립니다)
+#   /sandbox/itda                    ItDA 코드     읽기 전용: 에이전트가 자기 코드를 고칠 수 없습니다
+#   /sandbox/pack/TASK.md            요청서        읽기 전용
+#   /sandbox/pack/hackathon/input    자료          읽기 전용
+#   /sandbox/pack/hackathon/output   결과물        쓰기는 이 한 곳에만 합니다
+#   restricted/, secrets/            올리지 않음   올라와 있더라도 허용 목록 밖이라 커널(Landlock)이 거부합니다
+#
+# filesystem_policy · landlock · process 는 샌드박스를 만들 때 고정되고(static),
+# network_policies 는 실행 중에도 바꿀 수 있습니다(dynamic).
+# 실서비스 모드의 공공 API(위키백과·관광공사·TMAP 등)는 이 파일에 넣지 않고,
+# 필요할 때만 policy/presets/ 의 API별 프리셋으로 하나씩 엽니다.
+
+version: 1
+
+filesystem_policy:
+  include_workdir: false              # 작업 폴더를 자동으로 읽기·쓰기로 열지 않습니다
+  read_only:
+    - /usr
+    - /lib
+    - /etc
+    - /proc
+    - /dev/urandom
+    - /opt/venv                       # 샌드박스 이미지의 Python 런타임 (인터프리터 위치)
+    - /sandbox/itda                   # 앱 코드
+    - /sandbox/pack/TASK.md           # 요청서
+    - /sandbox/pack/hackathon/input   # 자료는 읽기만 합니다
+  read_write:
+    - /sandbox/pack/hackathon/output  # 결과 저장은 output 한 곳에만 합니다
+    - /tmp
+    - /dev/null
+
+landlock:
+  compatibility: hard_requirement     # 파일 제한을 하나라도 적용하지 못하면 기동 자체를 거부합니다
+
+process:
+  run_as_user: sandbox                # root가 아닌 계정으로 실행합니다
+  run_as_group: sandbox
+
+network_policies:
+  # Nemotron 3 Super (build.nvidia.com NIM).
+  # 샌드박스는 OpenShell 게이트웨이의 추론 라우터(inference.local)만 부릅니다.
+  # 실제 NVIDIA 엔드포인트(integrate.api.nvidia.com) 호출과 API 키는 샌드박스 밖 게이트웨이에만 있습니다.
+  # 게이트웨이 라우팅 없이 직접 부르는 환경이라면 host 를 integrate.api.nvidia.com 으로 바꿉니다.
+  nim_chat:
+    name: nim-chat
+    endpoints:
+      - host: inference.local
+        port: 443
+        protocol: rest
+        enforcement: enforce          # 기본값 audit 은 기록만 하고 요청을 통과시킵니다
+        rules:
+          - allow: { method: POST, path: "/v1/chat/completions" }   # 같은 호스트의 다른 API는 막습니다
+    binaries:
+      - path: /opt/venv/bin/python3   # 실제 파이썬 실행 파일 하나. 넓은 패턴(/**)은 쓰지 않습니다
+
+  # Nemotron 3 Nano NIM (L40S 로컬 컨테이너, 호스트 :8000). 문서별 작은 분류 작업에 씁니다.
+  nim_local:
+    name: nim-local
+    endpoints:
+      - host: host.openshell.internal
+        port: 8000
+        protocol: rest
+        enforcement: enforce
+        allowed_ips: ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]   # 게이트웨이 호스트(사설망)만
+        rules:
+          - allow: { method: POST, path: "/v1/chat/completions" }
+    binaries:
+      - path: /opt/venv/bin/python3
+
+# network_middlewares: 넣지 않습니다 (API가 아직 바뀌는 중)

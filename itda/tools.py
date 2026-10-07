@@ -2,7 +2,7 @@
 
 Two layers of control:
   1. here: only tools in TOOLS can run, only against ALLOWED_HOSTS, GET/POST-search only;
-  2. OpenShell: the sandbox network policy (policy/itda-tools.yaml) allows exactly these hosts.
+  2. OpenShell: the sandbox network policy (policy/presets/, one preset per API) allows exactly these hosts.
 API keys come from env vars. Inside the sandbox those hold OpenShell placeholders that the
 proxy swaps for the real credential only at the bound endpoint, so the agent never sees them.
 Everything a tool returns is untrusted data: it goes through the same triage as local files.
