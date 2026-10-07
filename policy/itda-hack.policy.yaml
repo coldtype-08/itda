@@ -58,6 +58,20 @@ network_policies:
     - path: /usr/local/bin/dcode
     - path: /opt/venv/bin/python3*
     - path: /opt/venv/lib/python3.13/**
+  nemoclaw_custom__itda-ekc__itda_ekc:
+    name: itda-ekc
+    endpoints:
+    - host: devin.aks.ac.kr
+      port: 8080
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /api/**
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
   nemoclaw_custom__itda-local-nano__itda_local_nano:
     name: itda-local-nano
     endpoints:
@@ -115,6 +129,29 @@ network_policies:
     binaries:
     - path: /opt/venv/bin/python3
     - path: /opt/venv/bin/python
+  nemoclaw_custom__itda-tmap__itda_tmap:
+    name: itda-tmap
+    endpoints:
+    - host: apis.openapi.sk.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: POST
+          path: /tmap/routes/pedestrian
+      - allow:
+          method: GET
+          path: /tmap/pois
+      - allow:
+          method: POST
+          path: /tmap/routes
+      - allow:
+          method: POST
+          path: /transit/routes
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
   nemoclaw_custom__itda-tourapi__itda_tourapi:
     name: itda-tourapi
     endpoints:
@@ -129,6 +166,12 @@ network_policies:
       - allow:
           method: GET
           path: /1360000/**
+      - allow:
+          method: GET
+          path: /1613000/**
+      - allow:
+          method: GET
+          path: /B554287/**
     binaries:
     - path: /opt/venv/bin/python3
     - path: /opt/venv/bin/python
