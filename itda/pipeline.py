@@ -400,6 +400,9 @@ def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: st
                                        "approvals_needed": [], "not_done": []})
 
 
+GROUND_EDITABLE = ("title", "summary", "itinerary", "interpretation", "deliverable_text")
+
+
 def ground_check(cfg: Config, llm: LLM, plan: dict, resolved: dict, docs: list[Doc], triaged: list[dict]) -> tuple[dict, list]:
     """Second pass: drop claims the sources do not support (fabricated history etc.)."""
     used = {t["id"] for t in triaged if t.get("relevant")}
@@ -415,9 +418,16 @@ def ground_check(cfg: Config, llm: LLM, plan: dict, resolved: dict, docs: list[D
         _progress(f"  근거 검사 실패, 원본 초안 유지 ({e})")
         return plan, []
     new = out.get("plan") if isinstance(out, dict) else None
-    if not isinstance(new, dict) or "itinerary" not in new:
+    if not isinstance(new, dict):
         return plan, []
-    return new, out.get("removed", [])
+    # The grounding pass may only edit narrative fields. Everything else (diet, decisions, Plan B,
+    # cards, approvals) is kept from the synthesizer: models tend to silently drop keys on rewrite.
+    merged = dict(plan)
+    for k in GROUND_EDITABLE:
+        v = new.get(k)
+        if v not in (None, "", []) or not plan.get(k):
+            merged[k] = v if v is not None else plan.get(k)
+    return merged, out.get("removed", [])
 
 
 def _cited(plan: dict, resolved: dict) -> set:
@@ -552,8 +562,12 @@ def run(cfg: Config) -> dict:
     _progress(f"   사실 {len(resolved.get('facts', []))}건, 제외 {len(resolved.get('excluded_sources', []))}건, "
               f"무시한 지시 {len(resolved.get('untrusted_instructions', []))}건")
     cons = consensus_table(triaged)
-    resolved["quorum"] = [{"topic": g["topic"], "attribute": g["attribute"], **g["quorum"]}
-                          for g in cons if g["quorum"]["status"] != "confirmed" or len(g["candidates"]) > 1]
+    # Only questions backed by at least one usable source matter downstream; cap the list so the
+    # synthesizer is not flooded (unresolved noise mostly comes from weak external snippets).
+    useful = [g for g in cons if any((c.get("score") or 0) >= 0.2 for c in g["candidates"])
+              and (g["quorum"]["status"] != "confirmed" or len(g["candidates"]) > 1)]
+    useful.sort(key=lambda g: {"tentative": 0, "unresolved": 1, "confirmed": 2}[g["quorum"]["status"]])
+    resolved["quorum"] = [{"topic": g["topic"], "attribute": g["attribute"], **g["quorum"]} for g in useful[:10]]
     qs = [g["quorum"]["status"] for g in cons]
     _progress(f"   정족수 판정: 확정 {qs.count('confirmed')} · 잠정 {qs.count('tentative')} · 미결 {qs.count('unresolved')}")
     audit.log("quorum", confirmed=qs.count("confirmed"), tentative=qs.count("tentative"), unresolved=qs.count("unresolved"))
