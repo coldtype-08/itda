@@ -31,6 +31,8 @@ class Config:
     llm_base_url: str = field(default_factory=lambda: os.environ.get(
         "ITDA_LLM_BASE_URL", "https://integrate.api.nvidia.com/v1"))
     llm_api_key: str = field(default_factory=_api_key)
+    # Small/fast model endpoint (e.g. Nemotron Nano NIM on the L40S). Empty -> same as llm_base_url.
+    fast_base_url: str = field(default_factory=lambda: os.environ.get("ITDA_FAST_BASE_URL", ""))
     model_main: str = field(default_factory=lambda: os.environ.get(
         "ITDA_MODEL", "nvidia/nemotron-3-super-120b-a12b"))  # set to ...-ultra-550b-a55b for max quality
     model_fast: str = field(default_factory=lambda: os.environ.get(

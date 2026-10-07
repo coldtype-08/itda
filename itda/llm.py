@@ -39,9 +39,14 @@ class LLM:
         self.no_think = os.environ.get("ITDA_THINKING") != "1"
         self.no_think_supported = True
 
+    def _base(self, model: str) -> str:
+        if self.cfg.fast_base_url and model == self.cfg.model_fast and model != self.cfg.model_main:
+            return self.cfg.fast_base_url
+        return self.cfg.llm_base_url
+
     def _request(self, body: dict) -> dict:
         req = urllib.request.Request(
-            self.cfg.llm_base_url.rstrip("/") + "/chat/completions",
+            self._base(body["model"]).rstrip("/") + "/chat/completions",
             data=json.dumps(body).encode(),
             headers={"Content-Type": "application/json",
                      "Authorization": f"Bearer {self.cfg.llm_api_key}"},
