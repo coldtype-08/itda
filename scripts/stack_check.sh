@@ -16,7 +16,7 @@ nemo-deepagents inference get 2>&1 | grep -aiE "provider|model|route" | head -4
 
 say "OpenShell (sandbox, enforced policy, denials)"
 openshell sandbox list 2>&1 | grep -a "$SB"
-echo "network policies:"; openshell policy get "$SB" --full 2>/dev/null | grep -E "^  [a-z_]+:$" | sed 's/^/ /'
+echo "network policies:"; openshell policy get "$SB" --full 2>/dev/null | awk '/^network_policies:/{f=1;next} /^[^ ]/{f=0} f && /^  [^ ].*:$/{print}' | sed 's/^/ /'
 echo "landlock: $(openshell policy get "$SB" --full 2>/dev/null | grep -A1 '^landlock' | tail -1)"
 echo "denied events in sandbox log: $(openshell logs "$SB" --source sandbox 2>/dev/null | grep -ac DENIED)"
 

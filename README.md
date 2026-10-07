@@ -232,7 +232,7 @@ restricted/, secrets/            올리지 않음          허용 목록 밖 →
 | [`eval/run_cases.py`](eval/run_cases.py) | 직접 만든 변형 과제 2개(휠체어 가족 · 일본 단체 할랄)로 일반화 확인 |
 | [`attacks/run_attacks.sh`](attacks/run_attacks.sh) | 샌드박스 안에서 외부 유출, 허용 호스트 악용, 금지 파일 읽기, 시스템 경로 변조를 시도해 모두 차단되는지 확인 |
 | [`scripts/stack_check.sh`](scripts/stack_check.sh) | Nemotron·NIM·NeMoClaw·OpenShell 연결 상태 점검 |
-| [`scripts/collect_evidence.sh`](scripts/collect_evidence.sh) → [`docs/evidence.txt`](docs/evidence.txt) | 서버에서 차단 시연 결과, OpenShell `DENIED` 로그, 적용 정책, 마지막 실행이 샌드박스 경로(`/sandbox/pack/...`)를 읽고 `inference.local`로 추론했다는 기록을 한 파일로 저장 (키 값은 가림) |
+| [`scripts/collect_evidence.sh`](scripts/collect_evidence.sh) → [`docs/evidence.txt`](docs/evidence.txt) | 서버에서 차단 시연 결과, OpenShell `DENIED` 로그, 적용 정책, 마지막 실행이 샌드박스 안 경로(`/sandbox/...`)를 읽고 `inference.local`·L40S 로컬 NIM으로 추론했다는 기록을 한 파일로 저장 (키 값은 가림) |
 
 개발 중 측정치(실행마다 조금씩 다름): 연습 과제 19–22/23, 변형 과제 25/26.
 

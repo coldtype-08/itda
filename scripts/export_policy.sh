@@ -5,4 +5,4 @@ SB=${SANDBOX:-itda-hack}
 openshell policy get "$SB" --full | sed -n '/^---$/,$p' | tail -n +2 > policy/itda-hack.policy.yaml
 nemo-deepagents "$SB" policy list > policy/itda-hack.presets.txt 2>&1 || true
 echo "saved policy/itda-hack.policy.yaml ($(wc -l < policy/itda-hack.policy.yaml) lines) and policy/itda-hack.presets.txt"
-grep -E "^  [a-z_]+:$" policy/itda-hack.policy.yaml | sed 's/^/  network policy:/' || true
+awk '/^network_policies:/{f=1;next} /^[^ ]/{f=0} f && /^  [^ ].*:$/{print}' policy/itda-hack.policy.yaml | sed 's/^/  network policy:/' || true
