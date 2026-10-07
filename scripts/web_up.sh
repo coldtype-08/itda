@@ -21,12 +21,13 @@ if [ ! -x "$CF" ]; then
   curl -fsSL -o "$CF" https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64 && chmod +x "$CF"
 fi
 pkill -f "cloudflared tunnel" 2>/dev/null || true
-nohup "$CF" tunnel --no-autoupdate --url "http://localhost:${ITDA_WEB_PORT:-8501}" > out/tunnel.log 2>&1 &
+# --protocol http2: many cloud hosts block the default QUIC/UDP 7844 path.
+nohup "$CF" tunnel --no-autoupdate --protocol http2 --url "http://localhost:${ITDA_WEB_PORT:-8501}" > out/tunnel.log 2>&1 &
 for i in $(seq 1 30); do
-  URL=$(grep -oE "https://[a-z0-9-]+\.trycloudflare\.com" out/tunnel.log | head -1 || true)
+  URL=$(grep -aoE "https://[a-z0-9-]+\.trycloudflare\.com" out/tunnel.log | head -1 || true)
   [ -n "$URL" ] && break; sleep 1
 done
-[ -n "${URL:-}" ] || { echo "tunnel failed:"; tail -5 out/tunnel.log; exit 1; }
+[ -n "${URL:-}" ] || { echo "tunnel failed:"; tail -5 out/tunnel.log | tr -cd '[:print:]\n'; echo "direct (if the port is open): http://$(curl -s -4 ifconfig.me 2>/dev/null || hostname -I | cut -d' ' -f1):${ITDA_WEB_PORT:-8501}/?t=$TOKEN"; exit 1; }
 echo
 echo "share this link:  $URL/?t=$TOKEN"
 echo "(local:            http://localhost:${ITDA_WEB_PORT:-8501}/?t=$TOKEN)   stop: sh scripts/web_up.sh stop"
