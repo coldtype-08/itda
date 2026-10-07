@@ -1,0 +1,19 @@
+# ItDA collection tool egress. Preview, then apply:
+#   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-naver-search.yaml --dry-run
+preset:
+  name: itda-naver-search
+  description: "Naver Search API, search endpoints only (no other Naver APIs)"
+network_policies:
+  itda_naver_search:
+    name: itda-naver-search
+    endpoints:
+      - host: openapi.naver.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/v1/search/**" }
+    binaries:
+      - { path: /usr/bin/python3 }
+      - { path: /usr/bin/python3.12 }
+      - { path: /usr/local/bin/python3 }

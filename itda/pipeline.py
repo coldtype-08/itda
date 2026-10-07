@@ -7,6 +7,7 @@ posting are impossible by construction and only appear as `approvals_needed`.
 from __future__ import annotations
 
 import json
+import os
 import re
 import sys
 import time
@@ -287,7 +288,7 @@ def plan_agent(cfg: Config, llm: LLM, task: str, docs: list[Doc], tools: Tools) 
         return {"goal": task[:200], "tool_calls": [], "error": str(e)}
 
 
-def run_tools(plan: dict, tools: Tools, visit_date: str | None, max_calls: int = 6) -> tuple[list[Doc], list[dict]]:
+def run_tools(plan: dict, tools: Tools, visit_date: str | None, max_calls: int = int(os.environ.get('ITDA_MAX_TOOL_CALLS', '8'))) -> tuple[list[Doc], list[dict]]:
     calls = [c for c in (plan.get("tool_calls") or []) if isinstance(c, dict)][:max_calls]
     for c in calls:
         if c.get("tool") == "weather":

@@ -1,0 +1,25 @@
+# ItDA collection tool egress. Preview, then apply:
+#   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-open-meteo.yaml --dry-run
+preset:
+  name: itda-open-meteo
+  description: "Open-Meteo forecast + geocoding, read-only"
+network_policies:
+  itda_open_meteo:
+    name: itda-open-meteo
+    endpoints:
+      - host: api.open-meteo.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/v1/forecast" }
+      - host: geocoding-api.open-meteo.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/v1/search" }
+    binaries:
+      - { path: /usr/bin/python3 }
+      - { path: /usr/bin/python3.12 }
+      - { path: /usr/local/bin/python3 }

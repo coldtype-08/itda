@@ -28,7 +28,7 @@ sh scripts/fetch_challenge.sh
 export NVIDIA_API_KEY=...            # 커밋 금지
 python3 -m itda --visitor foreign --interests history,family
 python3 eval/run_eval.py              # 연습 과제 함정 체크리스트
-python3 -m itda.web                   # 데모 UI (http://<host>:8501)
+python3 -m itda.web                   # 데모 UI (http://<host>:8501): 챌린지 모드 / 직접 입력(실사용) 모드
 
 # 2) OpenShell 샌드박스 안에서 (키는 게이트웨이에만 존재)
 SANDBOX=itda-hack sh scripts/sandbox_run.sh --visitor foreign --interests history,family
@@ -39,6 +39,15 @@ openshell sandbox exec -n itda-hack -- sh /sandbox/itda/attacks/run_attacks.sh
 
 옵션: `--visitor foreign|korean`, `--interests history,family,kculture`, `--lang en|ko`, `--visit-date`, `--mock`(LLM 없이 배선 점검).
 환경변수: `ITDA_LLM_BASE_URL`, `ITDA_MODEL`, `ITDA_MODEL_FAST`, `ITDA_CONCURRENCY`.
+
+## 두 가지 모드
+
+| 모드 | 입력 | 자료 출처 |
+|---|---|---|
+| 챌린지 | `TASK.md` + `input/` 폴더 | 주어진 로컬 자료 (+ 필요 시 외부 도구) |
+| 직접 입력 (실사용) | 웹 화면의 요청·방문일·동행자 조건 | 한국관광공사 TourAPI(운영시간·휴무일), 네이버 검색(장소·뉴스), Open-Meteo(날씨), 위키백과, Tavily/Brave |
+
+두 모드 모두 같은 신뢰 판단(원문 인용 검증 → 근거 점수 → 합의 표 → 주제별 검증 → 근거 검사)을 거친다.
 
 ## 데모 확인 방법
 
@@ -53,7 +62,7 @@ TODO(데모 담당): 데모 URL 또는 단계별 확인 방법
 
 | 권한 | 설정 | 이유 |
 |---|---|---|
-| 네트워크 egress | 기본 거부. 수집 도구용 도메인만 허용 ([`policy/itda-tools.yaml`](policy/itda-tools.yaml)): 위키백과·Open-Meteo 읽기 전용, Tavily `POST /search`만, 네이버는 `/v1/search/**`만, Brave는 웹 검색만, 공공데이터포털은 관광공사·기상청 경로만 | 자료 속 "외부 업로드" 지시(prompt injection)가 실행돼도 나갈 곳이 없게 |
+| 네트워크 egress | 기본 거부. 수집 도구용 도메인만 서비스별 프리셋으로 허용 ([`policy/presets/`](policy/presets/)): 위키백과·Open-Meteo 읽기 전용, Tavily `POST /search`만, 네이버는 `/v1/search/**`만, Brave는 웹 검색만, 공공데이터포털은 관광공사·기상청 경로만 | 자료 속 "외부 업로드" 지시(prompt injection)가 실행돼도 나갈 곳이 없게 |
 | 모델 추론 | `inference.local` 라우팅만 | API 키는 호스트 게이트웨이에만 보관, 샌드박스에는 키가 없음 |
 | 파일 읽기 | 업로드한 `TASK.md`, `input/`만 존재 | `restricted/`, `secrets/`는 샌드박스에 올리지 않음 (데이터 최소화) |
 | 시스템 경로 | `/usr`, `/etc` 등 읽기 전용, 그 외 Landlock으로 차단 | 변조·권한 상승 방지 |

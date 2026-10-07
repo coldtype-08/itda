@@ -54,7 +54,7 @@ class Tools:
         if os.environ.get("TAVILY_API_KEY"):
             out["tavily"] = "일반 웹 검색 (Tavily)"
         if os.environ.get("DATA_GO_KR_KEY"):
-            out["tour"] = "한국관광공사 관광정보 키워드 검색 (공공데이터포털)"
+            out["tour"] = "한국관광공사 TourAPI: 관광지 검색 + 운영시간·휴무일·요금·주차·유모차 정보·개요 (공식 공공데이터)"
         if os.environ.get("NAVER_CLIENT_ID") and os.environ.get("NAVER_CLIENT_SECRET"):
             out["naver"] = ("네이버 검색 API. kind=local(지도 등록 장소: 이름·주소·분류), blog(블로그 요약, 신뢰도 낮음), "
                             "encyc(지식백과), news(뉴스). 지도 리뷰·블로그 본문은 제공되지 않음")
@@ -121,15 +121,40 @@ class Tools:
                                             for x in r.get("results", [])]}
 
     def tour(self, keyword: str, lang: str = "ko") -> dict:
+        """Korea Tourism Organization search + detail for the top hits: hours, closed days, fees, overview."""
         svc = "EngService2" if lang == "en" else "KorService2"
-        qs = urllib.parse.urlencode({"MobileOS": "ETC", "MobileApp": "ITDA", "_type": "json",
-                                     "numOfRows": 5, "pageNo": 1, "keyword": keyword})
-        # serviceKey is appended raw: inside the sandbox it is an OpenShell placeholder.
-        r = self._http(f"{TOUR_BASE}/{svc}/searchKeyword2?serviceKey={os.environ['DATA_GO_KR_KEY']}&{qs}")
-        items = (((r.get("response") or {}).get("body") or {}).get("items") or {})
-        items = items.get("item", []) if isinstance(items, dict) else []
-        return {"keyword": keyword, "results": [{"title": i.get("title"), "addr": i.get("addr1"),
-                                                 "contentid": i.get("contentid")} for i in items[:5]]}
+        common = {"MobileOS": "ETC", "MobileApp": "ITDA", "_type": "json"}
+        key = os.environ["DATA_GO_KR_KEY"]  # inside the sandbox this is an OpenShell placeholder
+
+        def get(op: str, **params) -> list:
+            qs = urllib.parse.urlencode({**common, **params})
+            r = self._http(f"{TOUR_BASE}/{svc}/{op}?serviceKey={key}&{qs}")
+            items = (((r.get("response") or {}).get("body") or {}).get("items") or {})
+            items = items.get("item", []) if isinstance(items, dict) else []
+            return items if isinstance(items, list) else [items]
+
+        hits = get("searchKeyword2", keyword=keyword, numOfRows=5, pageNo=1)
+        results = []
+        for i, h in enumerate(hits[:5]):
+            row = {"title": h.get("title"), "addr": h.get("addr1"), "contentid": h.get("contentid"),
+                   "contenttypeid": h.get("contenttypeid"), "tel": h.get("tel")}
+            if i < 2 and h.get("contentid"):
+                try:  # opening hours, closed days, fees, parking, stroller/accessibility notes
+                    intro = (get("detailIntro2", contentId=h["contentid"], contentTypeId=h.get("contenttypeid", "")) or [{}])[0]
+                    row["detail"] = {k: _strip_tags(str(v))[:300] for k, v in intro.items()
+                                     if v and any(t in k for t in ("usetime", "restdate", "usefee", "parking",
+                                                                   "chkbabycarriage", "infocenter", "opentime",
+                                                                   "eventstartdate", "eventenddate", "playtime"))}
+                except Exception as e:  # keep the search hit even if detail fails
+                    row["detail_error"] = type(e).__name__
+                try:
+                    common_d = (get("detailCommon2", contentId=h["contentid"]) or [{}])[0]
+                    if common_d.get("overview"):
+                        row["overview"] = _strip_tags(common_d["overview"])[:600]
+                except Exception:
+                    pass
+            results.append(row)
+        return {"keyword": keyword, "source": "한국관광공사 TourAPI (공공데이터포털)", "results": results}
 
     def naver(self, query: str, kind: str = "local", display: int = 5) -> dict:
         kind = kind if kind in NAVER_KINDS else "local"

@@ -26,14 +26,40 @@ JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 
 
-def _start(visitor: str, interests: list[str]) -> str:
+def _live_inputs(job_dir: Path, req: dict) -> tuple[Path, Path]:
+    """Live mode: the user's own request becomes TASK.md, and their companions/conditions become a
+    structured visitor profile, so the same pipeline (trust checks, consensus, Plan B) runs on real
+    places with real API data instead of the challenge folder."""
+    task_dir, inp = job_dir / "task", job_dir / "input" / "request"
+    task_dir.mkdir(parents=True, exist_ok=True)
+    inp.mkdir(parents=True, exist_ok=True)
+    date = (req.get("date") or "").strip()[:10]
+    text = (req.get("request") or "").strip()[:2000]
+    (task_dir / "TASK.md").write_text(
+        "# 요청 (사용자 직접 입력)\n" + text + (f"\n\n방문일: {date}" if date else "") +
+        "\n\n실제 장소에 대한 요청이다. 도구로 운영시간·휴무일·최근 소식·날씨를 확인하고, "
+        "확인되지 않은 정보는 '방문 전 확인'으로 남긴다. 예약·연락·결제는 하지 않는다.\n", encoding="utf-8")
+    profile = {"group": "사용자 입력", "date": date or None, "visitor_type": req.get("visitor"),
+               "companions_and_needs": (req.get("companions") or "").strip()[:1000],
+               "approval": "draft_only", "source": "user_input (this request only)"}
+    (inp / "visitor_profile.json").write_text(json.dumps(profile, ensure_ascii=False, indent=1), encoding="utf-8")
+    return task_dir / "TASK.md", job_dir / "input"
+
+
+def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
     job = uuid.uuid4().hex[:8]
     out = RUNS / job
     out.mkdir(parents=True, exist_ok=True)
     args = ["--visitor", visitor, "--interests", ",".join(interests)]
+    extra_env = {}
+    if req and req.get("mode") == "live":
+        task, inp = _live_inputs(RUNS / f"{job}_in", req)
+        args += ["--task", str(task), "--input", str(inp)]
+        extra_env = {"TASK_FILE": str(task), "INPUT_DIR": str(inp)}
     if os.environ.get("ITDA_RUNNER") == "sandbox":
-        cmd = ["sh", "scripts/sandbox_run.sh", *args]
-        env = {**os.environ, "OUT_DIR": str(out)}
+        sb_args = [a for a in args if a not in ("--task", "--input") and a not in extra_env.values()]
+        cmd = ["sh", "scripts/sandbox_run.sh", *sb_args]
+        env = {**os.environ, "OUT_DIR": str(out), **extra_env}
     else:
         cmd = [sys.executable, "-m", "itda", *args, "--output", str(out)]
         env = dict(os.environ)
@@ -98,10 +124,12 @@ class Handler(BaseHTTPRequestHandler):
         interests = [i for i in body.get("interests", []) if i in INTERESTS]
         if visitor not in VISITOR_TYPES or not interests:  # whitelist: nothing user-supplied reaches the shell
             return self._json({"error": "invalid lens"}, 400)
+        if body.get("mode") == "live" and len((body.get("request") or "").strip()) < 5:
+            return self._json({"error": "요청 내용을 적어 주세요"}, 400)
         with LOCK:
             if any(not j["done"] for j in JOBS.values()):
                 return self._json({"error": "a run is already in progress"}, 409)
-            self._json({"job": _start(visitor, interests)})
+            self._json({"job": _start(visitor, interests, body)})
 
 
 PAGE = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
@@ -122,8 +150,15 @@ table{width:100%;border-collapse:collapse;font-size:14px}td,th{border-bottom:1px
 ul{margin:6px 0;padding-left:20px}
 </style></head><body><main>
 <h1>ItDA 잇다</h1><p class="sub">흩어진 기록을 검증해 나에게 맞는 문화 코스 초안으로 잇습니다 · Nemotron × OpenShell</p>
+<div class="row" id="mode" style="margin:8px 0">
+<button class="opt on" data-v="challenge">📂 챌린지 자료로 실행</button><button class="opt" data-v="live">✏️ 직접 입력 (실제 장소 · 실시간 API)</button></div>
+<div class="card" id="live" hidden><b>무엇을 도와드릴까요?</b>
+<textarea id="req" rows="3" style="width:100%;margin:8px 0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)" placeholder="예) 토요일에 부모님 모시고 경복궁이랑 근처 전통시장 반나절 코스 짜줘"></textarea>
+<div class="row"><label>방문일 <input type="date" id="date" style="font:inherit"></label></div>
+<textarea id="comp" rows="2" style="width:100%;margin:8px 0;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line);background:var(--bg);color:var(--fg)" placeholder="동행자·조건 예) 아버지 무릎이 안 좋아 계단 어려움, 어머니 비건, 7살 아이 땅콩 알레르기"></textarea>
+<div class="sub">입력한 내용은 이번 요청에만 쓰이고, 예약·연락은 하지 않습니다.</div></div>
 <div class="card"><div><b>1. 누구세요?</b></div><div class="row" id="vis" style="margin:8px 0 14px">
-<button class="opt on" data-v="foreign">🌏 외국인 방문객</button><button class="opt" data-v="korean">🇰🇷 한국인</button></div>
+<button class="opt on" data-v="auto">🤖 자동 판단</button><button class="opt" data-v="foreign">🌏 외국인 방문객</button><button class="opt" data-v="korean">🇰🇷 한국인</button></div>
 <div><b>2. 무엇이 궁금하세요?</b></div><div class="row" id="int" style="margin:8px 0 14px">
 <button class="opt on" data-v="history">📜 역사적 맥락</button><button class="opt on" data-v="family">👨‍👩‍👧 가족·동행</button><button class="opt" data-v="kculture">🎤 K-컬처</button></div>
 <button class="go" id="go">코스 초안 만들기</button> <span id="st" class="sub"></span>
@@ -131,14 +166,15 @@ ul{margin:6px 0;padding-left:20px}
 <div id="res"></div>
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let visitor='foreign';
+let visitor='auto',mode='challenge';
+document.querySelectorAll('#mode .opt').forEach(b=>b.onclick=()=>{document.querySelectorAll('#mode .opt').forEach(x=>x.classList.remove('on'));b.classList.add('on');mode=b.dataset.v;$('#live').hidden=mode!=='live'});
 document.querySelectorAll('#vis .opt').forEach(b=>b.onclick=()=>{document.querySelectorAll('#vis .opt').forEach(x=>x.classList.remove('on'));b.classList.add('on');visitor=b.dataset.v});
 document.querySelectorAll('#int .opt').forEach(b=>b.onclick=()=>b.classList.toggle('on'));
 $('#go').onclick=async()=>{
   const interests=[...document.querySelectorAll('#int .opt.on')].map(b=>b.dataset.v);
   if(!interests.length){$('#st').textContent='관심사를 하나 이상 고르세요';return}
   $('#go').disabled=true;$('#res').innerHTML='';$('#log').hidden=false;$('#log').textContent='';
-  const r=await fetch('run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,interests})});
+  const r=await fetch('run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,interests,mode,request:$('#req').value,date:$('#date').value,companions:$('#comp').value})});
   const j=await r.json();if(!r.ok){$('#st').textContent=j.error;$('#go').disabled=false;return}
   const poll=async()=>{const s=await (await fetch('status?job='+j.job)).json();
     $('#log').textContent=s.lines.join('\n');$('#log').scrollTop=1e9;$('#st').textContent=(s.done?(s.ok?'완료':'실패'):'실행 중… ')+s.elapsed+'s';

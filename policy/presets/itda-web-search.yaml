@@ -1,0 +1,25 @@
+# ItDA collection tool egress. Preview, then apply:
+#   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-web-search.yaml --dry-run
+preset:
+  name: itda-web-search
+  description: "Tavily POST /search and Brave web search only"
+network_policies:
+  itda_web_search:
+    name: itda-web-search
+    endpoints:
+      - host: api.tavily.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: POST, path: "/search" }
+      - host: api.search.brave.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/res/v1/web/search" }
+    binaries:
+      - { path: /usr/bin/python3 }
+      - { path: /usr/bin/python3.12 }
+      - { path: /usr/local/bin/python3 }

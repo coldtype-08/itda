@@ -1,0 +1,27 @@
+# ItDA collection tool egress. Preview, then apply:
+#   nemo-deepagents itda-hack policy add --from-file policy/presets/itda-wikipedia.yaml --dry-run
+preset:
+  name: itda-wikipedia
+  description: "Wikipedia REST, read-only (ItDA background facts)"
+network_policies:
+  itda_wikipedia:
+    name: itda-wikipedia
+    endpoints:
+      - host: ko.wikipedia.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/w/rest.php/v1/search/page" }
+          - allow: { method: GET, path: "/api/rest_v1/page/summary/**" }
+      - host: en.wikipedia.org
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/w/rest.php/v1/search/page" }
+          - allow: { method: GET, path: "/api/rest_v1/page/summary/**" }
+    binaries:
+      - { path: /usr/bin/python3 }
+      - { path: /usr/bin/python3.12 }
+      - { path: /usr/local/bin/python3 }
