@@ -37,7 +37,7 @@ class Config:
         "ITDA_MODEL_FAST", os.environ.get("ITDA_MODEL", "nvidia/nemotron-3-super-120b-a12b")))
     llm_timeout: float = float(os.environ.get("ITDA_LLM_TIMEOUT", "180"))
     llm_extra_body: str = os.environ.get("ITDA_LLM_EXTRA_BODY", "")  # raw JSON merged into requests
-    concurrency: int = int(os.environ.get("ITDA_CONCURRENCY", "4"))
+    concurrency: int = int(os.environ.get("ITDA_CONCURRENCY", "8"))
     triage_mode: str = os.environ.get("ITDA_TRIAGE_MODE", "batch")  # batch | per_doc
     mock: bool = os.environ.get("ITDA_LLM_MOCK") == "1"
 
