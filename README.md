@@ -95,10 +95,21 @@ flowchart LR
 | 기술 | 잇다에서 하는 일 |
 |---|---|
 | **Nemotron 3 Super 120B** (`nvidia/nemotron-3-super-120b-a12b`) | 계획·주제별 검증·종합·근거 확인. thinking을 끄고(`enable_thinking: false`) 호출당 지연을 줄였습니다 |
-| **NIM** | build.nvidia.com NIM 엔드포인트(Super) + **L40S의 로컬 NIM 컨테이너**(Nemotron 3 Nano 1.7.0, 문서별 작은 분류 작업) |
+| **NIM** | build.nvidia.com NIM 엔드포인트(Super) + **L40S의 로컬 NIM 컨테이너**(Nemotron 3 Nano 1.7.0, 가져온 자료를 한 건씩 읽는 작업) |
 | **NeMoClaw** | `nemo-deepagents`로 샌드박스 `itda-hack`을 Restricted 등급으로 만들고, API별 정책 프리셋을 관리합니다 |
 | **OpenShell** | Landlock 파일 격리, 메서드·경로 단위 L7 네트워크 정책, 실행 파일 단위 허용, NVIDIA API 키는 게이트웨이에만 보관(`inference.local`) |
 | **L40S** | 로컬 NIM(Nano) 서빙과 에이전트·웹 데모 실행 |
+
+### 두 Nemotron의 역할
+
+| | 서버(L40S)에 올린 **Nemotron 3 Nano** (로컬 NIM) | API로 부르는 **Nemotron 3 Super 120B** (build.nvidia.com NIM) |
+|---|---|---|
+| 역할 | **읽기**: 에이전트가 API로 가져온 자료를 한 건씩 읽고 사실·원문 인용·자료 종류·숨은 지시 여부를 뽑습니다 | **판단**: 무엇을 확인할지 계획하고, 자료끼리 비교해 무엇을 믿을지 정하고(검증 에이전트 3개), 코스를 쓰고, 근거를 검사합니다 |
+| 호출 경로 | 샌드박스 → `host.openshell.internal:8000` | 샌드박스 → OpenShell 게이트웨이 `inference.local` → build.nvidia.com |
+| 실제 호출 수 ([마지막 실행](docs/evidence.txt)) | 9회 (가져온 자료 9건, 한 건에 한 번) | 7회 (계획 1 · 로컬 자료 분류 1 · 검증 3 · 코스 작성 1 · 근거 검사 1) |
+| 이렇게 나눈 이유 | 작고 많은 일이라 빠른 작은 모델을 우리 GPU에서 병렬로 돌립니다 | 비교와 추론이 필요한 일이라 큰 모델에 맡깁니다 |
+
+Nano가 응답하지 않으면 같은 일을 Super가 자동으로 대신합니다.
 
 ## 설치 및 실행
 
