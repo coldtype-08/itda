@@ -13,6 +13,12 @@ import sys
 from pathlib import Path
 
 out = Path(sys.argv[1] if len(sys.argv) > 1 else "challenge/hackathon/output")
+if not (out / "itda_result.json").exists():  # e.g. a directory downloaded from the sandbox
+    hits = sorted(out.rglob("itda_result.json"), key=lambda p: p.stat().st_mtime)
+    if not hits:
+        sys.exit(f"no itda_result.json under {out}")
+    out = hits[-1].parent
+print(f"[eval] {out}")
 result = json.loads((out / "itda_result.json").read_text())
 audit = json.loads((out / "audit.json").read_text())
 md = (out / "course_draft.md").read_text()
