@@ -150,3 +150,22 @@ def needs_for(rules: list[Rule], tool_log: list[dict]) -> list[dict]:
                         "why": why or r.label, "confidence": r.confidence, "checked_with": checked,
                         "source": "rule"})
     return out
+
+
+_ABROAD = (r"스페인|바르셀로나|마드리드|프랑스|파리|이탈리아|로마|베네치아|영국|런던|독일|베를린|스위스|미국|뉴욕|하와이|"
+           r"일본|도쿄|오사카|교토|후쿠오카|삿포로|중국|베이징|상하이|대만|타이베이|태국|방콕|베트남|다낭|하노이|필리핀|세부|"
+           r"싱가포르|호주|시드니|캐나다|유럽|동남아|괌|사이판|발리|몰디브|두바이|튀르키예|터키|이집트")
+_KOREA = (r"한국|서울|부산|인천|대구|대전|광주|울산|세종|경기|강원|충청|전라|경상|제주|경주|전주|수원|안동|여수|강릉|속초|"
+          r"고궁|궁|사찰|절|한옥|시장|해담|성진정|국내")
+_TRAVEL = r"여행|여행지|추천|가볼|일정|코스|관광|투어|명소"
+_OFFTOPIC = r"주식|코인|비트코인|투자|코드|코딩|프로그램\s*짜|숙제|과제\s*대신|레포트\s*대신|로또"
+
+
+def scope_hint(task: str) -> str:
+    """Cheap pre-check for obviously out-of-scope requests. The planner makes the final call."""
+    abroad = re.findall(_ABROAD, task)
+    if abroad and re.search(_TRAVEL, task) and not re.search(_KOREA, task):
+        return f"해외 지명({', '.join(sorted(set(abroad)))}) 여행 요청으로 보이며 한국 장소가 없음 → 범위 밖일 가능성 높음"
+    if re.search(_OFFTOPIC, task) and not re.search(_KOREA + "|문화|역사|관광|여행지", task):
+        return "문화·역사·여행과 무관한 요청으로 보임 → 범위 밖일 가능성 높음"
+    return "특이사항 없음"

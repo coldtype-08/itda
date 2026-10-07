@@ -28,6 +28,9 @@ def main(argv: list[str] | None = None) -> int:
         cfg.mock = True
     result = run(cfg)
     plan = result["plan"]
+    if result.get("status") == "out_of_scope":
+        print(f"[itda] out of scope: {result.get('scope_reason')}")
+        return 0
     print(f"[itda] {plan.get('title')} — {len(plan.get('itinerary', []))} stops, "
           f"{len(result['resolved'].get('excluded_sources', []))} sources excluded, "
           f"{len(result['resolved'].get('untrusted_instructions', []))} untrusted instructions ignored")

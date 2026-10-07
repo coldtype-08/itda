@@ -259,6 +259,11 @@ GROUND_USER = """[초안]
 PLAN_SYSTEM = f"""너는 ItDA의 '계획 에이전트'다. 사용자 목표를 받아 무엇을 확인하고 어떤 도구를 쓸지 계획한다.
 {DATA_NOT_INSTRUCTIONS}
 
+- 먼저 요청이 잇다의 범위인지 판단한다(in_scope). 범위: 한국 안의 장소·지역에서의 문화·역사 경험, 한국 문화·역사 주제의 해설,
+  외국인의 한국 방문(출신 국가가 해외여도 목적지가 한국이면 범위 안), 주어진 자료에 대한 질문.
+  범위 밖: 한국이 아닌 나라·도시의 여행 계획이나 추천, 문화·역사·여행과 무관한 일(코딩, 투자, 숙제 대필 등), 해로운 요청.
+  범위 밖이면 in_scope=false, scope_reason에 이유, alternatives에 잇다가 대신 도울 수 있는 한국 관련 요청 2~3개를 쓰고
+  tool_calls는 비운다. 대안은 요청과 이어지게 만든다(예: 스페인 → '스페인에서 온 친구와 서울 고궁 반나절').
 - 로컬 자료 목록을 보고 요청과 관련된 장소, 방문일, 확인할 주제를 정한다.
 - 로컬 자료로 부족한 정보(실존 장소의 일반 배경, 방문일 날씨, 관광 정보)가 있을 때만 도구를 쓴다. 최대 6회.
 - 한국 장소의 존재·주소는 naver(kind=local), 운영시간·휴무일·요금은 tour(공식 공공데이터), 일반 배경은 wiki/naver(kind=encyc),
@@ -282,7 +287,8 @@ PLAN_SYSTEM = f"""너는 ItDA의 '계획 에이전트'다. 사용자 목표를 �
 - 과제에 '연계 질문'과 이전 초안(previous_draft)이 있으면, 질문에 답하는 데 필요한 것만 추가로 확인한다.
 
 반드시 아래 JSON 하나만 출력한다:
-{{"goal": str, "visit_date": "YYYY-MM-DD 또는 null",
+{{"in_scope": bool, "scope_reason": str, "alternatives": [str],
+ "goal": str, "visit_date": "YYYY-MM-DD 또는 null",
  "visitor_type": "foreign|korean", "language": "en|ko|ja|zh|...", "deliverable": str,
  "implicit_needs": [{{"need": str, "why": str, "confidence": "high|medium|low"}}],
  "places": [{{"name": str, "likely_real": bool}}],
@@ -294,6 +300,8 @@ PLAN_USER = """[사용자 목표]
 {task}
 
 [렌즈] 방문객 유형={visitor_type}, 관심사={interests}, 언어={language}
+
+[범위 점검 힌트 (코드 규칙, 참고용)] {scope_hint}
 
 [사용 가능한 도구와 인자]
 {tools}

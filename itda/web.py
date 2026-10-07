@@ -313,7 +313,12 @@ function askFollow(q){if(!q||!q.trim()||!lastJob)return;startRun({followup:q,par
 const TYPE={official_notice:'공식 공지',field_survey:'현장 조사',structured_data:'방문단 정보',internal_guideline:'운영 규칙',interpretation_draft:'해설 자료',community_post:'지역 게시판',promotional:'홍보물',personal_blog:'개인 블로그',advertisement:'광고',archive:'과거 기록',web_search:'웹 검색',public_api:'공공 API',external_instruction:'의심되는 외부 지시',other:'기타'};
 const TRUST={use:['믿을 수 있음','g'],use_with_caution:['주의해서 사용',''],background_only:['참고용',''],ignore:['사용 안 함','r']};
 function renderUser(d){
-  const R=d.result||{},P=R.plan||{},V=R.resolved||{},S={};(R.sources||[]).forEach(s=>S[s.id]=s);
+  const R=d.result||{},P=R.plan||{},V=R.resolved||{},S={};
+  if(R.status==='out_of_scope'){
+    $('#res').innerHTML=`<div class="hero"><h2>🙏 ${esc(P.title)}</h2><div>${esc(P.summary)}</div><div class="show" style="border-color:var(--warn);margin-top:12px"><div class="mut small">이유</div>${esc(R.scope_reason)}</div>
+      ${(R.alternatives||[]).length?`<div class="lbl">대신 이렇게 도와드릴 수 있어요</div><div class="chips">${R.alternatives.map(a=>`<button class="chip" onclick="document.getElementById('req').value=this.textContent;window.scrollTo({top:0,behavior:'smooth'})">${esc(a)}</button>`).join('')}</div>`:''}
+      <p class="mut small">검색·검증·코스 생성은 실행하지 않았어요. 자료 없이 지어낸 일정을 드리지 않기 위해서예요.</p></div>`;
+    $('#res').hidden=false;$('#dev').hidden=true;return}(R.sources||[]).forEach(s=>S[s.id]=s);
   const order=[],num={};const fn=ids=>(ids||[]).filter(i=>S[i]).map(i=>{if(!(i in num)){order.push(i);num[i]=order.length}return `<sup class="fn" data-i="${esc(i)}">[${num[i]}]</sup>`}).join('');
   const Q=(R.consensus||[]).map(g=>(g.quorum||{}).status),conf=Q.filter(x=>x==='confirmed').length;
   const used=(R.sources||[]).filter(s=>s.trust!=='ignore').length;

@@ -329,6 +329,7 @@ def plan_agent(cfg: Config, llm: LLM, task: str, docs: list[Doc], tools: Tools, 
     listing = "\n".join(f"- {d.path}: {d.text[:150].replace(chr(10), ' ')}" for d in docs)
     lens = "auto (과제와 자료에서 판단)" if cfg.visitor_type == "auto" else cfg.visitor_type
     user = prompts.PLAN_USER.format(task=task, visitor_type=lens, interests=", ".join(cfg.interests),
+                                    scope_hint=context.scope_hint(task),
                                     language=cfg.language or "auto", tools=tool_desc, docs=listing,
                                     signals=signals or "(없음)")
     try:
@@ -596,6 +597,28 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
     return "\n".join(out) + "\n"
 
 
+def _out_of_scope(cfg: Config, guard: PathGuard, audit: Audit, task: str, agent_plan: dict) -> dict:
+    """Stop before any tool call or synthesis: ItDA does not invent itineraries outside its domain."""
+    reason = agent_plan.get("scope_reason") or "잇다는 한국의 문화·역사·지역 경험을 돕는 에이전트예요."
+    alts = [a for a in (agent_plan.get("alternatives") or []) if isinstance(a, str)][:3]
+    _progress(f"⛔ 범위 밖 요청 → 중단: {reason}")
+    audit.log("out_of_scope", reason=reason, alternatives=alts)
+    plan = _normalize_plan({"title": "잇다가 도와드리기 어려운 요청이에요",
+                            "summary": "잇다는 한국 안의 장소에서 문화·역사를 경험하도록 돕는 에이전트예요. "
+                                       "근거 없이 지어낸 일정은 만들지 않아요.",
+                            "answer": reason, "not_done": ["범위 밖 요청이라 검색·검증·코스 생성을 하지 않음"]})
+    result = {"generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "status": "out_of_scope",
+              "lens": {"visitor_type": cfg.visitor_type, "interests": cfg.interests, "language": cfg.language},
+              "plan": plan, "alternatives": alts, "scope_reason": reason, "resolved": {}, "sources": [],
+              "consensus": [], "tool_calls": [], "agent_plan": agent_plan}
+    guard.write_text("itda_result.json", json.dumps(result, ensure_ascii=False, indent=2))
+    guard.write_text("course_draft.md", f"# {plan['title']}\n\n{reason}\n\n"
+                     + "".join(f"- {a}\n" for a in alts))
+    audit.log("done")
+    guard.write_text("audit.json", audit.to_json())
+    return result
+
+
 def run(cfg: Config) -> dict:
     audit = Audit()
     guard = PathGuard(read_roots=[cfg.input_dir, cfg.task_file], write_root=cfg.output_dir, audit=audit)
@@ -621,6 +644,9 @@ def run(cfg: Config) -> dict:
         signals = "\n".join(f"- {r.icon} {r.label}: " + "; ".join(n for _, n, _ in r.needs)
                              + (f" (확인 도구: {', '.join(t for t, _ in r.tools)})" if r.tools else "") for r in rules)
         agent_plan = plan_agent(cfg, llm, task, docs, tools, signals)
+        if agent_plan.get("in_scope") is False:
+            f_local.cancel()
+            return _out_of_scope(cfg, guard, audit, task, agent_plan)
         _progress(f"   계획: {agent_plan.get('goal', '')[:80]} / 도구 호출 {len(agent_plan.get('tool_calls') or [])}건")
         if cfg.visitor_type == "auto":
             vt = agent_plan.get("visitor_type")
