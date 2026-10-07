@@ -147,6 +147,8 @@ RESOLVE_USER = """[사용자 요청]
 
 [합의 후보 — 코드가 계산한 근거 점수(0~1). 같은 대상·속성의 후보끼리 비교한다]
 점수 = 출처 권한 × 무결성 × 신뢰 판정 × 원문 인용 확인. 점수는 참고값이며, 적용 범위·정정 규칙이 점수보다 우선한다.
+quorum = 자료별 가중 투표(같은 자료·복제 문구는 1표): confirmed(가중치 2/3 이상 동의 + 원문 인용 확인) / tentative(우세하나 2/3 미달) / unresolved(근거 부족).
+tentative·unresolved를 confirmed로 판정하려면 그렇게 판단한 scope·correction 근거를 rationale에 적는다.
 quote_verified=false인 후보는 원문에서 인용을 찾지 못한 것이므로 단독 근거로 쓰지 않는다.
 {consensus}
 
@@ -183,6 +185,7 @@ SYNTH_SYSTEM = f"""너는 ItDA의 '종합 에이전트'다. 검증된 사실만�
     choice는 근거가 가장 강하고, 틀려도 방문객이 덜 곤란한(보수적인) 쪽을 고른다.
   - scenarios: 기본안이 틀릴 수 있는 지점마다 '만약 ~라면 → ~한다' 대안(Plan B). 운영 변경·조기 마감, 날씨, 접근성,
     음식 확인 실패(확인 안 되면 먹지 않는다), 휴관, 지연 등. 각 대안에 근거 doc_id.
+- 검증 결과의 quorum에서 tentative인 항목은 scenarios(Plan B)에, unresolved인 항목은 day_card의 '현장 확인' 줄과 uncertainties에 반드시 넣는다.
 - 각 방문객의 음식 제한·알레르기를 개인별로 반영하고, 현장에서 확인할 질문을 적는다.
 - 접근성(계단, 우회로, 공사)을 동선에 반영한다.
 - 예약·연락·발송·결제·게시는 하지 않는다. 필요한 행동은 approvals_needed에 '승인 필요'로만 적는다.

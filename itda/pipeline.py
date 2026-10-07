@@ -110,6 +110,7 @@ def consensus_table(triaged: list[dict], topics: list[str] | None = None) -> lis
             key = (c.get("topic"), _norm(c.get("subject", ""))[:24], (c.get("attribute") or "").lower())
             groups.setdefault(key, []).append({
                 "doc": t["id"], "value": c.get("value") or c.get("statement"), "applies_to": c.get("applies_to"),
+                "quote": c.get("quote"),
                 "score": c.get("evidence_score"), "quote_verified": c.get("quote_verified"),
                 "source_type": t.get("source_type"), "content_date": t.get("content_date")})
     out = []
@@ -117,8 +118,50 @@ def consensus_table(triaged: list[dict], topics: list[str] | None = None) -> lis
         cands.sort(key=lambda x: -(x["score"] or 0))
         values = {_norm(str(x["value"])) for x in cands}
         out.append({"topic": topic, "attribute": attr,
-                    "agree": len(values) == 1, "candidates": cands})
+                    "agree": len(values) == 1, "candidates": cands, "quorum": quorum(cands)})
     return out
+
+
+QUORUM = 2 / 3      # BFT-style supermajority of evidence weight
+MIN_WEIGHT = 0.5    # below this total there is not enough evidence to confirm anything
+
+
+def quorum(cands: list[dict]) -> dict:
+    """Source-weighted quorum (truth-discovery step 1 + BFT 2/3 rule), pure code, no LLM call.
+    Sources vote for a value with their evidence score; one source votes once per question,
+    and copies (same quote in several sources) count as a single vote.
+      confirmed  : >= 2/3 of the weight agrees AND a verbatim quote backs the winner
+      tentative  : a leading value exists but below 2/3 -> keep a Plan B
+      unresolved : too little evidence or no verified quote -> 'check on site'"""
+    votes: dict[str, float] = {}
+    shown: dict[str, str] = {}
+    verified: dict[str, bool] = {}
+    seen_docs, seen_quotes = set(), set()
+    for c in cands:
+        if c["doc"] in seen_docs:
+            continue
+        seen_docs.add(c["doc"])
+        qkey = _norm(str(c.get("quote") or ""))
+        if qkey and qkey in seen_quotes:
+            continue  # copied text: one vote
+        if qkey:
+            seen_quotes.add(qkey)
+        v = _norm(str(c["value"]))
+        votes[v] = votes.get(v, 0.0) + float(c.get("score") or 0)
+        shown.setdefault(v, str(c["value"]))
+        verified[v] = verified.get(v, False) or bool(c.get("quote_verified"))
+    total = sum(votes.values())
+    if not votes or total <= 0:
+        return {"status": "unresolved", "winner": None, "share": 0.0, "total": 0.0}
+    win = max(votes, key=votes.get)
+    share = votes[win] / total
+    if total < MIN_WEIGHT or not verified[win]:
+        status = "unresolved"
+    elif share >= QUORUM:
+        status = "confirmed"
+    else:
+        status = "tentative"
+    return {"status": status, "winner": shown[win], "share": round(share, 2), "total": round(total, 2)}
 
 
 def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[Doc],
@@ -450,12 +493,15 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
     conflicts = [g for g in (consensus or []) if len(g["candidates"]) > 1]
     if conflicts:
         out += ["", f"## {L('합의 표 (원문 인용 × 근거 점수)', 'Consensus (verbatim quote × evidence score)')}", "",
-                f"| {L('주제·속성', 'Topic · attribute')} | {L('후보 (점수 높은 순)', 'Candidates (by score)')} | {L('일치', 'Agree')} |",
+                f"| {L('주제·속성', 'Topic · attribute')} | {L('후보 (점수 높은 순)', 'Candidates (by score)')} | {L('정족수 판정 (2/3)', 'Quorum (2/3)')} |",
                 "|---|---|---|"]
         for g in conflicts:
             cands = "<br>".join(f"**{c['value']}** `{id2path.get(c['doc'], c['doc'])}` {c['score']} "
                                 f"{'✓' if c['quote_verified'] else '✗'}" for c in g["candidates"])
-            out.append(f"| {g['topic']} · {g['attribute']} | {cands} | {'✓' if g['agree'] else L('충돌', 'conflict')} |")
+            qv = g.get("quorum", {})
+            label = {"confirmed": L("확정", "confirmed"), "tentative": L("잠정", "tentative"),
+                     "unresolved": L("미결", "unresolved")}.get(qv.get("status"), "")
+            out.append(f"| {g['topic']} · {g['attribute']} | {cands} | **{label}** {qv.get('winner') or ''} ({qv.get('share', 0):.0%}) |")
     out += ["", f"## {L('자료 신뢰 판정', 'Source trust verdicts')}", "",
             f"| {L('자료', 'Source')} | {L('종류', 'Type')} | {L('판정', 'Verdict')} | {L('이유', 'Reason')} |",
             "|---|---|---|---|"]
@@ -505,6 +551,12 @@ def run(cfg: Config) -> dict:
     resolved = resolve(cfg, llm, task, visit_date, triaged)
     _progress(f"   사실 {len(resolved.get('facts', []))}건, 제외 {len(resolved.get('excluded_sources', []))}건, "
               f"무시한 지시 {len(resolved.get('untrusted_instructions', []))}건")
+    cons = consensus_table(triaged)
+    resolved["quorum"] = [{"topic": g["topic"], "attribute": g["attribute"], **g["quorum"]}
+                          for g in cons if g["quorum"]["status"] != "confirmed" or len(g["candidates"]) > 1]
+    qs = [g["quorum"]["status"] for g in cons]
+    _progress(f"   정족수 판정: 확정 {qs.count('confirmed')} · 잠정 {qs.count('tentative')} · 미결 {qs.count('unresolved')}")
+    audit.log("quorum", confirmed=qs.count("confirmed"), tentative=qs.count("tentative"), unresolved=qs.count("unresolved"))
     _progress(f"④ 종합 시작 ({cfg.model_main})")
     plan = synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or ""))
     _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
@@ -527,7 +579,7 @@ def run(cfg: Config) -> dict:
         "plan": plan,
         "resolved": resolved,
         "grounding_removed": removed,
-        "consensus": consensus_table(triaged),
+        "consensus": cons,
         "agent_plan": agent_plan,
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
