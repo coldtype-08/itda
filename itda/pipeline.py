@@ -20,6 +20,7 @@ from .guard import Audit, PathGuard
 from .ingest import _INSTRUCTION_RE, Doc, load_docs
 from .llm import LLM, LLMAuthError
 from .tools import Tools
+from . import context
 
 
 def _progress(msg: str) -> None:
@@ -322,13 +323,14 @@ def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: l
     return merged
 
 
-def plan_agent(cfg: Config, llm: LLM, task: str, docs: list[Doc], tools: Tools) -> dict:
+def plan_agent(cfg: Config, llm: LLM, task: str, docs: list[Doc], tools: Tools, signals: str = "") -> dict:
     avail = tools.available()
     tool_desc = "\n".join(f"- {k}: {v} 인자 {prompts.TOOL_ARGS[k]}" for k, v in avail.items())
     listing = "\n".join(f"- {d.path}: {d.text[:150].replace(chr(10), ' ')}" for d in docs)
     lens = "auto (과제와 자료에서 판단)" if cfg.visitor_type == "auto" else cfg.visitor_type
     user = prompts.PLAN_USER.format(task=task, visitor_type=lens, interests=", ".join(cfg.interests),
-                                    language=cfg.language or "auto", tools=tool_desc, docs=listing)
+                                    language=cfg.language or "auto", tools=tool_desc, docs=listing,
+                                    signals=signals or "(없음)")
     try:
         return llm.chat_json(prompts.PLAN_SYSTEM, user, cfg.model_main, "plan",
                              mock=lambda: {"goal": "mock", "places": [], "checks": [], "tool_calls": [
@@ -608,7 +610,15 @@ def run(cfg: Config) -> dict:
     _progress(f"② 계획 에이전트 + 로컬 분류 병렬 시작 (도구: {', '.join(tools.available())})")
     with ThreadPoolExecutor(max_workers=2) as pool:
         f_local = pool.submit(triage, cfg, llm, task, visit_date, docs)
-        agent_plan = plan_agent(cfg, llm, task, docs, tools)
+        # Situation signals from the request and visitor/companion data (code rules, explainable).
+        sig_text = task + "\n" + "\n".join(d.text[:2000] for d in docs if re.search(
+            r"people|visitor|profile|group|contact|request|companion", d.path, re.I))
+        rules = context.detect(sig_text)
+        if rules:
+            _progress("   상황 신호: " + ", ".join(f"{r.icon}{r.label}" for r in rules))
+        signals = "\n".join(f"- {r.icon} {r.label}: " + "; ".join(n for _, n, _ in r.needs)
+                             + (f" (확인 도구: {', '.join(t for t, _ in r.tools)})" if r.tools else "") for r in rules)
+        agent_plan = plan_agent(cfg, llm, task, docs, tools, signals)
         _progress(f"   계획: {agent_plan.get('goal', '')[:80]} / 도구 호출 {len(agent_plan.get('tool_calls') or [])}건")
         if cfg.visitor_type == "auto":
             vt = agent_plan.get("visitor_type")
@@ -617,7 +627,14 @@ def run(cfg: Config) -> dict:
                             or ("en" if cfg.visitor_type == "foreign" else "ko"))
             _progress(f"   렌즈 자동 판단: {cfg.visitor_type} / 언어 {cfg.language}")
         visit_date = visit_date or agent_plan.get("visit_date")
-        ext_docs, tool_log = run_tools(agent_plan, tools, visit_date)
+        places = [p.get("name") for p in (agent_plan.get("places") or [])
+                  if isinstance(p, dict) and p.get("name") and p.get("likely_real", True) is not False]
+        extra = context.suggested_calls(rules, places, visit_date, set(tools.available()),
+                                        [c for c in (agent_plan.get("tool_calls") or []) if isinstance(c, dict)])
+        if extra:
+            _progress(f"   상황 신호로 추가한 확인: " + ", ".join(f"{c['tool']}({c['args'].get('place') or c['args'].get('topic') or '…'})" for c in extra))
+            agent_plan["tool_calls"] = [c for c in (agent_plan.get("tool_calls") or []) if isinstance(c, dict)] + extra
+        ext_docs, tool_log = run_tools(agent_plan, tools, visit_date, max_calls=min(14, 8 + len(extra)))
         small = cfg.model_small if cfg.small_base_url else None
         ext_triaged = triage(cfg, llm, task, visit_date, ext_docs, model=small) if ext_docs else []
         texts = {d.id: d.text for d in ext_docs}
@@ -640,7 +657,10 @@ def run(cfg: Config) -> dict:
     _progress(f"   정족수 판정: 확정 {qs.count('confirmed')} · 잠정 {qs.count('tentative')} · 미결 {qs.count('unresolved')}")
     audit.log("quorum", confirmed=qs.count("confirmed"), tentative=qs.count("tentative"), unresolved=qs.count("unresolved"))
     _progress(f"④ 종합 시작 ({cfg.model_main})")
-    implicit = agent_plan.get("implicit_needs") if isinstance(agent_plan.get("implicit_needs"), list) else []
+    llm_needs = [dict(x, source="model") for x in (agent_plan.get("implicit_needs") or []) if isinstance(x, dict)]
+    rule_needs = context.needs_for(rules, tool_log)
+    seen = {_norm(n["need"]) for n in rule_needs}
+    implicit = rule_needs + [n for n in llm_needs if _norm(str(n.get("need", ""))) not in seen]
     if implicit:
         _progress("   추정 배려: " + ", ".join(str(x.get("need", x))[:30] for x in implicit[:6] if isinstance(x, dict)))
     plan = _normalize_plan(synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or ""), implicit))
@@ -683,6 +703,7 @@ def run(cfg: Config) -> dict:
         "consensus": cons,
         "agent_plan": agent_plan,
         "implicit_needs": implicit,
+        "context_signals": [{"id": r.id, "label": r.label, "icon": r.icon} for r in rules],
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
         "sources": [{**{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",

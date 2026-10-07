@@ -319,7 +319,15 @@ function renderUser(d){
    <div class="trust"><div><b>${used}/${(R.sources||[]).length}</b>사용한 자료</div><div><b>${conf}</b>교차 확인된 정보</div><div><b>${(V.untrusted_instructions||[]).length}</b>무시한 의심 지시</div></div></div>`;
   if(P.answer)h+=`<div class="show" style="border-color:var(--acc2)"><div class="mut small">💬 질문에 대한 답</div><div style="font-size:18px;margin-top:4px">${esc(P.answer)}</div></div>`;
   if((P.changes||[]).length)h+=`<div class="card"><b>이전 초안 대비 바뀐 점</b><ul>${P.changes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
-  if((P.considerations||[]).length)h+=`<h2>🤝 이렇게 배려했어요 <span class="mut small">(말씀하지 않으셨지만 추정해서 반영)</span></h2><div class="card"><ul>${P.considerations.map(c=>`<li><b>${esc(c.need)}</b> → ${esc(c.how_applied)}</li>`).join('')}</ul><div class="mut small">추정이 틀렸다면 아래 ‘이어서 물어보기’로 알려 주세요.</div></div>`;
+  const TL={nearby:'🍚 주변 식당·장소',accessibility:'♿ 무장애 정보',route:'🗺 동선',festival:'🎎 행사',kma_weather:'☔ 기상청 예보',weather_warning:'⚠ 기상특보',encyclopedia:'📜 민족문화대백과',place_info:'🏛 공식 운영정보'};
+  const IN=(R.implicit_needs||[]),SG=(R.context_signals||[]);
+  if(IN.length||(P.considerations||[]).length){
+    const groups={};IN.forEach(n=>{const k=n.signal||'에이전트 추론';(groups[k]=groups[k]||{icon:n.icon||'💡',items:[],checked:new Set()});groups[k].items.push(n);(n.checked_with||[]).forEach(t=>groups[k].checked.add(t))});
+    h+=`<h2>🤝 이렇게 배려했어요 <span class="mut small">(말씀하지 않으셨지만 상황에서 추정)</span></h2>`;
+    if(SG.length)h+=`<div class="badges">${SG.map(g=>`<span class="b">${esc(g.icon)} ${esc(g.label)}</span>`).join('')}</div>`;
+    h+=`<div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))">${Object.entries(groups).map(([k,g])=>`<div class="card" style="margin:0"><b>${esc(g.icon)} ${esc(k)}</b><ul style="margin:6px 0">${g.items.slice(0,6).map(n=>`<li><span class="b">${esc(n.category||'')}</span> ${esc(n.need)}${n.why&&n.why!==k?` <span class="mut small">— ${esc(n.why)}</span>`:''}</li>`).join('')}</ul>${g.checked.size?`<div class="small">확인한 데이터: ${[...g.checked].map(t=>`<span class="b g">${esc(TL[t]||t)} ✅</span>`).join(' ')}</div>`:`<div class="mut small">공식 데이터로는 확인하지 못함 → 현장 확인</div>`}</div>`).join('')}</div>`;
+    if((P.considerations||[]).length)h+=`<div class="card"><b>코스에 이렇게 반영했어요</b><ul>${P.considerations.map(c=>`<li><b>${esc(c.need)}</b> → ${esc(c.how_applied)}</li>`).join('')}</ul><div class="mut small">추정이 틀렸다면 아래 ‘이어서 물어보기’로 알려 주세요.</div></div>`;
+  }
   if((P.day_card||[]).length)h+=`<h2>📱 오늘의 카드</h2><div class="phone"><div class="t">${esc(P.title)}</div><ul>${P.day_card.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div><p class="mut small" style="text-align:center">화면을 캡처해 두면 현장에서 바로 볼 수 있어요.</p>`;
   if((P.itinerary||[]).length)h+=`<h2>🗺 일정</h2><div class="tl">${P.itinerary.map(i=>`<div class="it"><span class="time">${esc(i.time)}</span><h3>${esc(i.place)}${fn(i.evidence)}</h3><div>${esc(i.activity)}</div>${i.access_notes?`<div class="note">♿ ${esc(i.access_notes)}</div>`:''}</div>`).join('')}</div>`;
   if((P.phrase_cards||[]).length)h+=`<h2>🗣 직원에게 이 화면을 보여주세요</h2>`+P.phrase_cards.map(c=>`<div class="show"><div class="mut small">${esc(c.person)} · ${esc(c.situation)}</div><div class="ko">${esc(c.show_to_staff)}</div><div class="mut">${esc(c.meaning)}</div></div>`).join('');
