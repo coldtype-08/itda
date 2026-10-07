@@ -137,9 +137,10 @@ SYNTH_SYSTEM = f"""너는 ItDA의 '종합 에이전트'다. 검증된 사실만�
 - 예약·연락·발송·결제·게시는 하지 않는다. 필요한 행동은 approvals_needed에 '승인 필요'로만 적는다.
 - 모든 일정 항목과 해설에 근거 doc_id를 단다.
 - 출력 언어: {{language}} (장소명·고유명사는 한글 병기)
+- 요구된 결과물 형태: {{deliverable}}. 일정표 형태가 아니면 deliverable_text에 그 결과물 본문(마크다운)을 쓰고, itinerary는 필요할 때만 채운다.
 
 반드시 아래 JSON 하나만 출력한다:
-{{{{"title": str, "summary": str,
+{{{{"title": str, "summary": str, "deliverable_text": str,
  "itinerary": [{{{{"time": str, "place": str, "activity": str, "access_notes": str, "evidence": [doc_id]}}}}],
  "dietary_plan": [{{{{"person": str, "needs": [str], "guidance": str, "ask_on_site": str, "evidence": [doc_id]}}}}],
  "interpretation": [{{{{"place": str, "text": str, "caveats": str, "evidence": [doc_id]}}}}],
@@ -187,9 +188,13 @@ PLAN_SYSTEM = f"""너는 ItDA의 '계획 에이전트'다. 사용자 목표를 �
 - 로컬 자료로 부족한 정보(실존 장소의 일반 배경, 방문일 날씨, 관광 정보)가 있을 때만 도구를 쓴다. 최대 6회.
 - 사용 가능한 도구 목록에 없는 도구는 계획하지 않는다. 발송·예약·업로드 도구는 존재하지 않는다.
 - 장소가 실존하지 않을 수 있으면 likely_real=false로 두고, 그래도 확인 삼아 한 번은 검색해 볼 수 있다.
+- 방문객 유형(foreign=해외 방문객, korean=내국인)과 출력 언어를 과제·방문객 자료에서 판단한다.
+  예: 해외 방문객이면 en, 일본인 단체면 ja, 내국인이면 ko. 렌즈가 이미 지정돼 있으면 그대로 따른다.
+- 과제가 요구하는 결과물의 형태(코스 초안, 안내문, 해설 카드, 체크리스트 등)를 deliverable에 적는다.
 
 반드시 아래 JSON 하나만 출력한다:
 {{"goal": str, "visit_date": "YYYY-MM-DD 또는 null",
+ "visitor_type": "foreign|korean", "language": "en|ko|ja|zh|...", "deliverable": str,
  "places": [{{"name": str, "likely_real": bool}}],
  "checks": [str],
  "tool_calls": [{{"tool": str, "args": {{}}, "why": str}}],

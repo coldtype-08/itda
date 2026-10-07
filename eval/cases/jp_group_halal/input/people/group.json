@@ -1,0 +1,5 @@
+{"group": "Sakura Tour", "date": "2026-12-05", "language": "ja",
+ "people": [{"name": "Tanaka Yui", "needs": ["halal"]},
+            {"name": "Sato Mika", "needs": ["pregnant"]},
+            {"name": "Ito Ken", "needs": []}],
+ "approval": "draft_only"}

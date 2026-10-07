@@ -1,0 +1,5 @@
+{"group": "김씨 가족", "date": "2026-11-14",
+ "people": [{"name": "김영자", "age": 78, "needs": ["wheelchair"]},
+            {"name": "이도윤", "age": 7, "needs": ["egg allergy"]},
+            {"name": "이수진", "age": 41, "needs": []}],
+ "approval": "draft_only"}

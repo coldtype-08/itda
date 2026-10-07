@@ -14,7 +14,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--task", default="challenge/TASK.md", type=Path)
     ap.add_argument("--input", default="challenge/hackathon/input", type=Path)
     ap.add_argument("--output", default="challenge/hackathon/output", type=Path)
-    ap.add_argument("--visitor", default="foreign", choices=VISITOR_TYPES)
+    ap.add_argument("--visitor", default="auto", choices=VISITOR_TYPES, help="auto: planner decides from the task")
     ap.add_argument("--interests", default="history", help=f"comma list of {INTERESTS}")
     ap.add_argument("--lang", default=None, help="en | ko (default: by visitor type)")
     ap.add_argument("--visit-date", default=None)

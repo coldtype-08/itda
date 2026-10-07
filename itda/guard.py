@@ -10,7 +10,8 @@ import time
 from pathlib import Path
 
 # Path components the agent must never touch, wherever they appear.
-DENIED_PARTS = {"restricted", "secrets", ".ssh", ".aws", ".config", ".git"}
+DENIED_PARTS = {"restricted", "secrets", "secret", "private", "confidential", "credentials",
+                "비공개", "기밀", ".ssh", ".aws", ".config", ".git"}
 DENIED_SUFFIXES = {".env", ".pem", ".key"}
 MAX_READ_BYTES = 256 * 1024
 
@@ -54,12 +55,15 @@ class PathGuard:
     def _within(p: Path, root: Path) -> bool:
         return p == root or root in p.parents
 
+    def _denied_below(self, real: Path, root: Path) -> str | None:
+        # Only judge the part below the allowed root, so e.g. macOS /private/tmp roots stay usable.
+        return self._denied(real.relative_to(root)) if real != root else self._denied(Path(real.name))
+
     def check_read(self, path: Path) -> Path:
         # resolve() follows symlinks, so a link inside input/ pointing at secrets/ is caught here.
         real = Path(path).resolve()
-        reason = self._denied(real)
-        if reason is None and not any(self._within(real, r) for r in self.read_roots):
-            reason = "outside allowed read roots"
+        root = next((r for r in self.read_roots if self._within(real, r)), None)
+        reason = "outside allowed read roots" if root is None else self._denied_below(real, root)
         if reason:
             self.audit.log("blocked_read", path=str(path), reason=reason)
             raise GuardError(f"read blocked: {path} ({reason})")
@@ -73,7 +77,7 @@ class PathGuard:
 
     def write_text(self, name: str, text: str) -> Path:
         target = (self.write_root / name).resolve()
-        if not self._within(target, self.write_root) or self._denied(target):
+        if not self._within(target, self.write_root) or self._denied_below(target, self.write_root):
             self.audit.log("blocked_write", path=str(target))
             raise GuardError(f"write blocked: {target}")
         target.parent.mkdir(parents=True, exist_ok=True)

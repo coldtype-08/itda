@@ -5,7 +5,24 @@ import os
 from dataclasses import dataclass, field
 from pathlib import Path
 
-VISITOR_TYPES = ("foreign", "korean")
+VISITOR_TYPES = ("auto", "foreign", "korean")
+
+
+def load_env_file() -> None:
+    """Load KEY=VALUE lines from ~/.itda.env (or $ITDA_ENV_FILE) into os.environ without
+    overriding variables already set. The file lives outside the repo, mode 600, and is never
+    uploaded to the sandbox (scripts/sandbox_run.sh copies only code and allowed inputs)."""
+    path = Path(os.environ.get("ITDA_ENV_FILE", Path.home() / ".itda.env"))
+    if not path.is_file():
+        return
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+
+
+load_env_file()
 INTERESTS = ("family", "history", "kculture")
 
 
@@ -49,5 +66,5 @@ class Config:
         bad = [i for i in self.interests if i not in INTERESTS]
         if bad:
             raise ValueError(f"unknown interests {bad}; choose from {INTERESTS}")
-        if self.language is None:
+        if self.language is None and self.visitor_type != "auto":
             self.language = "en" if self.visitor_type == "foreign" else "ko"

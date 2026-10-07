@@ -40,7 +40,8 @@ def _guess_visit_date(task: str, docs: list[Doc]) -> str | None:
     return None
 
 
-_EXFIL_VERB = re.compile(r"업로드|전송|보내|upload|send|(?<![a-z])post(?![a-z])|exfil", re.I)
+_EXFIL_VERB = re.compile(r"업로드|전송|보내|메일로|공유하|upload|send|e-?mail|forward|share|(?<![a-z])post(?![a-z])|exfil", re.I)
+_OVERRIDE = re.compile(r"ignore\s+(all\s+|the\s+)?(previous|prior|above)\s+instructions|(이전|위의?|기존)\s*(지시|지침|규칙)[을를]?\s*무시", re.I)
 # ASCII-only boundaries: Hangul counts as a word char, so "\b" fails on "domain.example에".
 _EXTERNAL_HOST = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:example|com|net|io|org|kr|co|xyz|site)(?![a-z0-9-])", re.I)
 
@@ -48,7 +49,7 @@ _EXTERNAL_HOST = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:exam
 def _force_untrusted(doc: Doc, r: dict) -> dict:
     """Code-level rule, independent of the model: a document that asks for data to be sent to an
     external host is an injection, whatever the model called it."""
-    if _EXFIL_VERB.search(doc.text) and _EXTERNAL_HOST.search(doc.text):
+    if (_EXFIL_VERB.search(doc.text) and _EXTERNAL_HOST.search(doc.text)) or _OVERRIDE.search(doc.text):
         if not r.get("contains_instructions_to_agent") or r.get("source_type") != "external_instruction":
             r = {**r, "contains_instructions_to_agent": True, "source_type": "external_instruction",
                  "reliability": "untrusted", "relevant": False,
@@ -179,8 +180,9 @@ def plan_agent(cfg: Config, llm: LLM, task: str, docs: list[Doc], tools: Tools) 
     avail = tools.available()
     tool_desc = "\n".join(f"- {k}: {v} 인자 {prompts.TOOL_ARGS[k]}" for k, v in avail.items())
     listing = "\n".join(f"- {d.path}: {d.text[:150].replace(chr(10), ' ')}" for d in docs)
-    user = prompts.PLAN_USER.format(task=task, visitor_type=cfg.visitor_type, interests=", ".join(cfg.interests),
-                                    language=cfg.language, tools=tool_desc, docs=listing)
+    lens = "auto (과제와 자료에서 판단)" if cfg.visitor_type == "auto" else cfg.visitor_type
+    user = prompts.PLAN_USER.format(task=task, visitor_type=lens, interests=", ".join(cfg.interests),
+                                    language=cfg.language or "auto", tools=tool_desc, docs=listing)
     try:
         return llm.chat_json(prompts.PLAN_SYSTEM, user, cfg.model_main, "plan",
                              mock=lambda: {"goal": "mock", "places": [], "checks": [], "tool_calls": [
@@ -220,8 +222,12 @@ def run_tools(plan: dict, tools: Tools, visit_date: str | None, max_calls: int =
     return ext, log
 
 
-def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict) -> dict:
-    system = prompts.SYNTH_SYSTEM.format(language="English" if cfg.language == "en" else "한국어")
+LANG_NAMES = {"en": "English", "ko": "한국어", "ja": "日本語", "zh": "中文", "es": "Español", "fr": "Français"}
+
+
+def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: str = "") -> dict:
+    system = prompts.SYNTH_SYSTEM.format(language=LANG_NAMES.get(cfg.language, cfg.language),
+                                         deliverable=deliverable or "과제에 적힌 대로")
     user = prompts.SYNTH_USER.format(
         task=task, visitor_type=cfg.visitor_type, lens=prompts.LENS[cfg.visitor_type],
         interests=", ".join(f"{i}({prompts.INTEREST[i]})" for i in cfg.interests),
@@ -273,7 +279,9 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
     L = (lambda k, e: k if ko else e)
     out = [f"# {plan.get('title', 'ItDA')}", "",
            f"> **{L('초안', 'DRAFT')}** · {L('예약·연락·발송하지 않았습니다', 'Nothing has been booked, sent or posted')} · "
-           f"lens: {cfg.visitor_type} / {', '.join(cfg.interests)}", "", plan.get("summary", ""), ""]
+           f"lens: {cfg.visitor_type} / {', '.join(cfg.interests)} / {cfg.language}", "", plan.get("summary", ""), ""]
+    if (plan.get("deliverable_text") or "").strip():
+        out += [f"## {L('요청 결과물', 'Deliverable')}", "", plan["deliverable_text"].strip(), ""]
 
     out += [f"## {L('일정', 'Itinerary')}", "",
             f"| {L('시간', 'Time')} | {L('장소', 'Place')} | {L('활동', 'Activity')} | {L('접근·주의', 'Access notes')} | {L('근거', 'Evidence')} |",
@@ -322,6 +330,12 @@ def run(cfg: Config) -> dict:
         f_local = pool.submit(triage, cfg, llm, task, visit_date, docs)
         agent_plan = plan_agent(cfg, llm, task, docs, tools)
         _progress(f"   계획: {agent_plan.get('goal', '')[:80]} / 도구 호출 {len(agent_plan.get('tool_calls') or [])}건")
+        if cfg.visitor_type == "auto":
+            vt = agent_plan.get("visitor_type")
+            cfg.visitor_type = vt if vt in ("foreign", "korean") else "foreign"
+            cfg.language = cfg.language or str(agent_plan.get("language") or ("en" if cfg.visitor_type == "foreign" else "ko"))[:5]
+            _progress(f"   렌즈 자동 판단: {cfg.visitor_type} / 언어 {cfg.language}")
+        visit_date = visit_date or agent_plan.get("visit_date")
         ext_docs, tool_log = run_tools(agent_plan, tools, visit_date)
         ext_triaged = triage(cfg, llm, task, visit_date, ext_docs) if ext_docs else []
         triaged = f_local.result() + ext_triaged
@@ -331,7 +345,7 @@ def run(cfg: Config) -> dict:
     _progress(f"   사실 {len(resolved.get('facts', []))}건, 제외 {len(resolved.get('excluded_sources', []))}건, "
               f"무시한 지시 {len(resolved.get('untrusted_instructions', []))}건")
     _progress(f"④ 종합 시작 ({cfg.model_main})")
-    plan = synthesize(cfg, llm, task, resolved)
+    plan = synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or ""))
     _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
     plan, removed = ground_check(cfg, llm, plan, resolved, docs, triaged)
     _progress(f"   근거 없는 문장 {len(removed)}건 제거")
