@@ -12,6 +12,7 @@ import re
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from typing import Any, Callable
 
@@ -80,7 +81,8 @@ class LLM:
                 usage = payload.get("usage", {})
                 secs = round(time.time() - t0, 1)
                 self.audit.log("llm_call", label=label, model=model, ok=True, seconds=secs,
-                               tokens=usage.get("total_tokens"), finish=choice.get("finish_reason"))
+                               tokens=usage.get("total_tokens"), finish=choice.get("finish_reason"),
+                               endpoint=urllib.parse.urlparse(self._base(model)).netloc)
                 if os.environ.get("ITDA_VERBOSE", "1") == "1":
                     print(f"      · {label} {secs}s tokens={usage.get('total_tokens')} "
                           f"finish={choice.get('finish_reason')}", file=sys.stderr, flush=True)

@@ -274,7 +274,8 @@ ul{padding-left:20px}
  <div class="lbl">무엇이 궁금하세요? <span class="mut small">(여러 개 선택)</span></div>
  <div class="chips" id="int"><button class="chip on" data-v="history">📜 역사 이야기</button><button class="chip on" data-v="family">👨‍👩‍👧 가족·동행 배려</button><button class="chip" data-v="kculture">🎤 K-컬처</button></div>
  <button class="go" id="go">코스 만들기</button>
- <div id="prog" hidden><div class="steps"><div></div><div></div><div></div><div></div><div></div></div><div id="st" class="mut small"></div></div>
+ <div id="prog" hidden><div class="steps"><div></div><div></div><div></div><div></div><div></div></div><div id="st" class="mut small"></div>
+  <details id="logbox"><summary class="small">실시간 로그 보기 (에이전트가 지금 하는 일)</summary><pre id="livelog"></pre></details></div>
 </div>
 <div class="tabs" id="tabs" hidden><button class="on" data-v="user">여행 코스</button><button data-v="dev">검증 과정 (개발자 보기)</button></div>
 <div id="res"></div><div id="dev" hidden></div>
@@ -305,7 +306,7 @@ function pollJob(job){
     let k=0;STEPS.forEach((x,i)=>{if(log.includes(x[0]))k=i+1});if(s.done&&s.ok)k=5;
     document.querySelectorAll('.steps div').forEach((d,i)=>d.classList.toggle('on',i<k));
     $('#st').textContent=s.done?(s.ok?`완료 · ${s.elapsed}초`:'실행 중 문제가 생겼어요. 검증 과정 탭에서 로그를 확인하세요.'):`${(STEPS[Math.max(0,k-1)]||STEPS[0])[1]} · ${s.elapsed}초`;
-    window._log=log;if(!s.done)return setTimeout(poll,1000);$('#go').disabled=false;
+    window._log=log;const ll=$('#livelog');if(ll){ll.textContent=log;ll.scrollTop=1e9}if(!s.done)return setTimeout(poll,1000);$('#go').disabled=false;
     if(s.ok){lastJob=job;const d=await (await fetch('result?job='+job)).json();renderUser(d);renderDev(d);$('#dev').innerHTML+=`<h2>실행 로그</h2><pre>${esc(log)}</pre>`;$('#tabs').hidden=false}
     else{$('#dev').innerHTML=`<pre>${esc(log)}</pre>`;$('#tabs').hidden=false;$('#dev').hidden=false;$('#res').hidden=true}};poll()}
 function askFollow(q){if(!q||!q.trim()||!lastJob)return;startRun({followup:q,parent:lastJob});window.scrollTo({top:0,behavior:'smooth'})}
