@@ -1,0 +1,33 @@
+
+  Policy presets for sandbox 'itda-hack':
+    ○ brave — Brave Search API access
+    ○ brew — Homebrew (Linuxbrew) package manager access (brew binary preinstalled in base image)
+    ○ claude-code — Claude Code API, browser login, telemetry, and crash-report access
+    ○ github — GitHub.com and GitHub API access (git)
+    ○ gmail — Gmail IMAP and SMTP access for Python App Password workflows
+    ○ huggingface — Hugging Face Hub, LFS, and Inference API access
+    ○ jira — Jira and Atlassian Cloud access
+    ○ local-inference — Local inference access (Ollama, vLLM, llama.cpp) through the OpenShell gateway
+    ○ local-memory — Local Hindsight memory service access through the OpenShell gateway
+    ○ nous-audio — Nous Portal managed audio generation and transcription gateway
+    ○ nous-browser — Nous Portal managed browser automation gateway
+    ○ nous-code — Nous Portal managed sandboxed code execution gateway
+    ○ nous-image — Nous Portal managed image generation gateway
+    ○ nous-web — Nous Portal managed web search and crawl gateway
+    ○ npm — npm and Yarn registry access
+    ○ observability-otlp-local — OTLP/HTTP trace export to a local host collector
+    ○ openclaw-diagnostics-otel-local — OpenClaw diagnostics OTLP/HTTP export to local host collector
+    ○ openclaw-pricing — OpenClaw model-pricing reference fetch (LiteLLM + OpenRouter)
+    ○ outlook — Microsoft Outlook and Graph API access
+    ○ personal-open-internet — Broad TCP egress on destination ports 80 and 443 for trusted personal sandboxes
+    ○ public-reference — Read-only structured public reference APIs
+    ○ pypi — Python Package Index (PyPI) access
+    ○ tavily — Tavily web search API access (opt-in)
+    ○ weather — Read-only public weather, geocoding, and alert APIs
+    ● itda-local-nano [user-added] — custom OpenShell policy
+    ● itda-naver-search [user-added] — custom OpenShell policy
+    ● itda-open-meteo [user-added] — custom OpenShell policy
+    ● itda-tourapi [user-added] — custom OpenShell policy
+    ● itda-web-search [user-added] — custom OpenShell policy
+    ● itda-wikipedia [user-added] — custom OpenShell policy
+

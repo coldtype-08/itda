@@ -1,0 +1,184 @@
+version: 1
+filesystem_policy:
+  include_workdir: true
+  read_only:
+  - /usr
+  - /opt/venv
+  - /lib
+  - /dev/urandom
+  - /app
+  - /run/nemoclaw/managed-startup-ca-bundle.pem
+  - /run/nemoclaw/managed-startup-runtime.env
+  - /etc
+  - /var/log
+  - /var/lib/dpkg
+  - /run/nvidia-persistenced
+  read_write:
+  - /sandbox
+  - /sandbox/.deepagents
+  - /run/nemoclaw-dcode-mcp
+  - /tmp
+  - /dev/null
+  - /dev/nvidiactl
+  - /dev/nvidia-uvm
+  - /dev/nvidia-uvm-tools
+  - /dev/nvidia-modeset
+  - /proc
+  - /dev/nvidia0
+landlock:
+  compatibility: strict
+process:
+  run_as_user: sandbox
+  run_as_group: sandbox
+network_policies:
+  managed_inference:
+    name: managed_inference
+    endpoints:
+    - host: inference.local
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: POST
+          path: /v1/chat/completions
+      - allow:
+          method: POST
+          path: /v1/completions
+      - allow:
+          method: POST
+          path: /v1/embeddings
+      - allow:
+          method: GET
+          path: /v1/models
+      - allow:
+          method: GET
+          path: /v1/models/**
+    binaries:
+    - path: /usr/local/bin/dcode
+    - path: /opt/venv/bin/python3*
+    - path: /opt/venv/lib/python3.13/**
+  nemoclaw_custom__itda-local-nano__itda_local_nano:
+    name: itda-local-nano
+    endpoints:
+    - host: host.openshell.internal
+      port: 8000
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: POST
+          path: /v1/chat/completions
+      - allow:
+          method: GET
+          path: /v1/models
+      allowed_ips:
+      - '10.0.0.0/8'
+      - '172.16.0.0/12'
+      - '192.168.0.0/16'
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
+  nemoclaw_custom__itda-naver-search__itda_naver_search:
+    name: itda-naver-search
+    endpoints:
+    - host: openapi.naver.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /v1/search/**
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
+  nemoclaw_custom__itda-open-meteo__itda_open_meteo:
+    name: itda-open-meteo
+    endpoints:
+    - host: api.open-meteo.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /v1/forecast
+    - host: geocoding-api.open-meteo.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /v1/search
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
+  nemoclaw_custom__itda-tourapi__itda_tourapi:
+    name: itda-tourapi
+    endpoints:
+    - host: apis.data.go.kr
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /B551011/**
+      - allow:
+          method: GET
+          path: /1360000/**
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
+  nemoclaw_custom__itda-web-search__itda_web_search:
+    name: itda-web-search
+    endpoints:
+    - host: api.tavily.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: POST
+          path: /search
+    - host: api.search.brave.com
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /res/v1/web/search
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
+  nemoclaw_custom__itda-wikipedia__itda_wikipedia:
+    name: itda-wikipedia
+    endpoints:
+    - host: ko.wikipedia.org
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /w/rest.php/v1/search/page
+      - allow:
+          method: GET
+          path: /api/rest_v1/page/summary/**
+    - host: en.wikipedia.org
+      port: 443
+      protocol: rest
+      enforcement: enforce
+      rules:
+      - allow:
+          method: GET
+          path: /w/rest.php/v1/search/page
+      - allow:
+          method: GET
+          path: /api/rest_v1/page/summary/**
+    binaries:
+    - path: /opt/venv/bin/python3
+    - path: /opt/venv/bin/python
