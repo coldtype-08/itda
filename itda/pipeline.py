@@ -50,7 +50,12 @@ _EXTERNAL_HOST = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:exam
 def _force_untrusted(doc: Doc, r: dict) -> dict:
     """Code-level rule, independent of the model: a document that asks for data to be sent to an
     external host is an injection, whatever the model called it."""
-    if (_EXFIL_VERB.search(doc.text) and _EXTERNAL_HOST.search(doc.text)) or _OVERRIDE.search(doc.text):
+    if doc.path.startswith("external/"):
+        body = re.sub(r'"(url|link|content_urls)"\s*:\s*"[^"]*"', "", doc.text)
+        hit = bool(_OVERRIDE.search(body))
+    else:
+        hit = bool((_EXFIL_VERB.search(doc.text) and _EXTERNAL_HOST.search(doc.text)) or _OVERRIDE.search(doc.text))
+    if hit:
         if not r.get("contains_instructions_to_agent") or r.get("source_type") != "external_instruction":
             r = {**r, "contains_instructions_to_agent": True, "source_type": "external_instruction",
                  "reliability": "untrusted", "relevant": False, "trust": "ignore",
@@ -400,6 +405,23 @@ def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: st
                                        "approvals_needed": [], "not_done": []})
 
 
+_PLAN_LISTS = ("itinerary", "dietary_plan", "interpretation", "uncertainties", "approvals_needed", "not_done",
+               "day_card", "phrase_cards", "decisions", "scenarios")
+
+
+def _normalize_plan(plan) -> dict:
+    """Models sometimes return null or a single object where a list is expected; never crash on that."""
+    plan = plan if isinstance(plan, dict) else {}
+    for k in _PLAN_LISTS:
+        v = plan.get(k)
+        plan[k] = v if isinstance(v, list) else ([] if v in (None, "") else [v])
+    for k in ("title", "summary", "deliverable_text"):
+        if not isinstance(plan.get(k), str):
+            plan[k] = "" if plan.get(k) is None else str(plan.get(k))
+    plan["title"] = plan["title"] or "ItDA"
+    return plan
+
+
 GROUND_EDITABLE = ("title", "summary", "itinerary", "interpretation", "deliverable_text")
 
 
@@ -600,9 +622,10 @@ def run(cfg: Config) -> dict:
     _progress(f"   정족수 판정: 확정 {qs.count('confirmed')} · 잠정 {qs.count('tentative')} · 미결 {qs.count('unresolved')}")
     audit.log("quorum", confirmed=qs.count("confirmed"), tentative=qs.count("tentative"), unresolved=qs.count("unresolved"))
     _progress(f"④ 종합 시작 ({cfg.model_main})")
-    plan = synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or ""))
+    plan = _normalize_plan(synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or "")))
     _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
     plan, removed = ground_check(cfg, llm, plan, resolved, docs, triaged)
+    plan = _normalize_plan(plan)
     _progress(f"   근거 없는 문장 {len(removed)}건 제거")
     # Damaged / OCR / estimated sources: every candidate year must survive into the draft.
     by_id = {d.id: d for d in docs}

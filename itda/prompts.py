@@ -279,7 +279,7 @@ PLAN_USER = """[사용자 목표]
 
 TOOL_ARGS = {
     "wiki": '{"query": "검색어", "lang": "ko|en"}',
-    "weather": '{"place": "지명", "date": "YYYY-MM-DD"}',
+    "weather": '{"place": "도시·시군 이름(영문 권장, 예: Seoul, Suwon, Gyeongju). 건물·명소 이름은 찾지 못함", "date": "YYYY-MM-DD"}',
     "tavily": '{"query": "검색어"}',
     "tour": '{"keyword": "검색어", "lang": "ko|en"}',
     "naver": '{"query": "검색어", "kind": "local|blog|encyc|news"}',
