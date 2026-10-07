@@ -20,6 +20,8 @@ TASK + 렌즈 ──▶ ① 수집(PathGuard: input/만)
 
 ## 설치 및 실행
 
+> 새 서버에서 전체 환경 재현: [`docs/SETUP.md`](docs/SETUP.md) → `sh scripts/setup_server.sh`
+
 ```bash
 # 0) 챌린지 자료 받기 (./challenge, 커밋하지 않음)
 sh scripts/fetch_challenge.sh
@@ -55,8 +57,8 @@ TODO(데모 담당): 데모 URL 또는 단계별 확인 방법
 
 ## OpenShell policy
 
-- 정책 파일: [`policy/itda-hack.policy.yaml`](policy/itda-hack.policy.yaml) (`openshell policy get itda-hack --full`로 추출한 실제 적용본)
-- 샌드박스 생성: NemoClaw `onboard`, 정책 단계 **Restricted**, 프리셋 전부 제거(github·pypi 포함)
+- 정책 파일: [`policy/itda-hack.policy.yaml`](policy/itda-hack.policy.yaml) (실제 적용본, `sh scripts/export_policy.sh`) + 서비스별 프리셋 [`policy/presets/`](policy/presets/)
+- 샌드박스 생성: NemoClaw 비대화형 `onboard` (`NEMOCLAW_POLICY_TIER=restricted`, 선택 프리셋 없음) — `scripts/setup_server.sh`
 
 ### 주요 권한 설계와 이유
 
