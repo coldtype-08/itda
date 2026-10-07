@@ -40,6 +40,23 @@ def _guess_visit_date(task: str, docs: list[Doc]) -> str | None:
     return None
 
 
+_EXFIL_VERB = re.compile(r"업로드|전송|보내|upload|send|(?<![a-z])post(?![a-z])|exfil", re.I)
+# ASCII-only boundaries: Hangul counts as a word char, so "\b" fails on "domain.example에".
+_EXTERNAL_HOST = re.compile(r"(?<![a-z0-9-])[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:example|com|net|io|org|kr|co|xyz|site)(?![a-z0-9-])", re.I)
+
+
+def _force_untrusted(doc: Doc, r: dict) -> dict:
+    """Code-level rule, independent of the model: a document that asks for data to be sent to an
+    external host is an injection, whatever the model called it."""
+    if _EXFIL_VERB.search(doc.text) and _EXTERNAL_HOST.search(doc.text):
+        if not r.get("contains_instructions_to_agent") or r.get("source_type") != "external_instruction":
+            r = {**r, "contains_instructions_to_agent": True, "source_type": "external_instruction",
+                 "reliability": "untrusted", "relevant": False,
+                 "instruction_summary": r.get("instruction_summary") or "외부 호스트로 자료 전송을 요구하는 문구",
+                 "forced_by_rule": "exfiltration request to external host"}
+    return r
+
+
 def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[Doc]) -> list[dict]:
     def one(doc: Doc) -> dict:
         user = prompts.TRIAGE_USER.format(
@@ -57,7 +74,7 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
         # Deterministic signal wins over the model: hinted docs are always treated as untrusted input.
         if doc.instruction_hints and out.get("contains_instructions_to_agent"):
             out["reliability"] = "untrusted"
-        return {"id": doc.id, "path": doc.path, **out}
+        return _force_untrusted(doc, {"id": doc.id, "path": doc.path, **out})
 
     def batch(chunk: list[Doc]) -> list[dict]:
         body = "\n\n".join(prompts.TRIAGE_BATCH_DOC.format(
@@ -85,7 +102,7 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
                 continue
             if d.instruction_hints and r.get("contains_instructions_to_agent"):
                 r["reliability"] = "untrusted"
-            res.append({**r, "id": d.id, "path": d.path})
+            res.append(_force_untrusted(d, {**r, "id": d.id, "path": d.path}))
         _progress(f"  분류 완료 {chunk[0].id}–{chunk[-1].id} ({len(chunk)}건)")
         return res
 
@@ -93,10 +110,10 @@ def triage(cfg: Config, llm: LLM, task: str, visit_date: str | None, docs: list[
         with ThreadPoolExecutor(max_workers=cfg.concurrency) as pool:
             results = list(pool.map(one, docs))
     else:
-        # Pack small documents into batches (~12k chars each); batches run in parallel.
+        # Small batches (≤5 docs or ~4k chars) run in parallel: 20 docs ≈ 4 concurrent calls.
         chunks, cur, size = [], [], 0
         for d in docs:
-            if cur and size + len(d.text) > 12000:
+            if cur and (len(cur) >= 5 or size + len(d.text) > 4000):
                 chunks.append(cur)
                 cur, size = [], 0
             cur.append(d)
@@ -147,6 +164,9 @@ def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: l
     for p in parts:
         for x in p.get("untrusted_instructions") or []:
             by_doc.setdefault(x.get("doc"), x)
+    for t in triaged:  # anything triage flagged is always reported, even if verifiers forgot it
+        if t.get("contains_instructions_to_agent") and t["id"] not in by_doc:
+            by_doc[t["id"]] = {"doc": t["id"], "summary": t.get("instruction_summary", "")}
     merged["untrusted_instructions"] = list(by_doc.values())
     # A source is excluded only if every verifier excluded it.
     excluded_sets = [{x.get("doc"): x for x in (p.get("excluded_sources") or [])} for p in parts]

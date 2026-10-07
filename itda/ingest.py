@@ -19,7 +19,7 @@ _INSTRUCTION_HINTS = [
     r"업로드", r"upload", r"전송하", r"보내(라|세요|줘)", r"send\s+(it|this|to)", r"POST\b",
     r"무시하(고|라)", r"ignore (all|previous|the above)", r"시스템\s*(설정|프롬프트)",
     r"system prompt", r"api[_ ]?key", r"token", r"비밀번호", r"password",
-    r"https?://", r"[a-z0-9-]+\.(example|com|net|io|org|kr)\b",
+    r"https?://", r"(?<![a-z0-9-])[a-z0-9-]+\.(?:example|com|net|io|org|kr)(?![a-z0-9-])",
 ]
 _INSTRUCTION_RE = re.compile("|".join(_INSTRUCTION_HINTS), re.I)
 
