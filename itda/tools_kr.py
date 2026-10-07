@@ -10,11 +10,13 @@ from __future__ import annotations
 import json
 import math
 import os
+import urllib.parse
 import urllib.request
 from datetime import date
 from typing import Any
 
 TMAP_URL = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1"
+TMAP_POI = "https://apis.openapi.sk.com/tmap/pois?version=1&count=1&resCoordType=WGS84GEO&searchKeyword="
 
 
 def _public_key() -> str:
@@ -53,7 +55,7 @@ class KoreanTools:
             })
         if self._kapi and os.environ.get("AKS_API_KEY"):
             out["encyclopedia"] = "한국민족문화대백과사전 (한국학중앙연구원): 역사·문화 주제의 권위 있는 배경 설명"
-        if self._kapi and _public_key() or os.environ.get("TMAP_APP_KEY"):
+        if (self._kapi and _public_key()) or os.environ.get("TMAP_APP_KEY") or os.environ.get("NAVER_CLIENT_ID"):
             out["route"] = ("방문 장소들의 동선: 가까운 순서로 정렬하고 구간별 도보 거리·시간 계산 "
                             + ("(TMAP 보행자 경로)" if os.environ.get("TMAP_APP_KEY") else "(직선거리 추정)"))
         return out
@@ -112,11 +114,34 @@ class KoreanTools:
 
     # ---- route -----------------------------------------------------------------------------
     def _coords(self, place: str) -> tuple[float, float, str] | None:
+        """TMAP POI search first (no data.go.kr approval needed), then the KTO registry, then Naver local."""
+        if os.environ.get("TMAP_APP_KEY"):
+            try:
+                req = urllib.request.Request(TMAP_POI + urllib.parse.quote(place),
+                                             headers={"appKey": os.environ["TMAP_APP_KEY"], "Accept": "application/json"})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    poi = json.loads(r.read() or b"{}")["searchPoiInfo"]["pois"]["poi"][0]
+                lat = float(poi.get("frontLat") or poi.get("noorLat"))
+                lon = float(poi.get("frontLon") or poi.get("noorLon"))
+                return lat, lon, f"TMAP POI '{poi.get('name')}'"
+            except Exception:  # noqa: BLE001
+                pass
         if self._kapi and _public_key():
             try:
                 return self._kapi.resolve_coords(self.client, place=place)
             except Exception:  # noqa: BLE001
-                return None
+                pass
+        if os.environ.get("NAVER_CLIENT_ID") and os.environ.get("NAVER_CLIENT_SECRET"):
+            try:
+                req = urllib.request.Request(
+                    "https://openapi.naver.com/v1/search/local.json?display=1&query=" + urllib.parse.quote(place),
+                    headers={"X-Naver-Client-Id": os.environ["NAVER_CLIENT_ID"],
+                             "X-Naver-Client-Secret": os.environ["NAVER_CLIENT_SECRET"]})
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    it = json.loads(r.read())["items"][0]
+                return int(it["mapy"]) / 1e7, int(it["mapx"]) / 1e7, "네이버 지역검색"
+            except Exception:  # noqa: BLE001
+                pass
         return None
 
     @staticmethod
@@ -135,9 +160,16 @@ class KoreanTools:
                                      headers={"appKey": os.environ["TMAP_APP_KEY"], "Accept": "application/json",
                                               "Content-Type": "application/json"})
         with urllib.request.urlopen(req, timeout=15) as r:
-            props = json.loads(r.read())["features"][0]["properties"]
+            feats = json.loads(r.read())["features"]
+        props = feats[0]["properties"]
+        path: list[list[float]] = []
+        for f in feats:  # walking path geometry, [lat, lon] for the map
+            g = f.get("geometry") or {}
+            if g.get("type") == "LineString":
+                path += [[c[1], c[0]] for c in g.get("coordinates", [])]
+        step = max(1, len(path) // 200)
         return {"meters": int(props.get("totalDistance", 0)), "minutes": round(int(props.get("totalTime", 0)) / 60),
-                "method": "TMAP 보행자 경로"}
+                "method": "TMAP 보행자 경로", "path": path[::step] + path[-1:]}
 
     def route(self, places: list[str] | str, keep_order: bool = False) -> dict:
         names = [p.strip() for p in (places.split(",") if isinstance(places, str) else places) if str(p).strip()][:8]
@@ -168,6 +200,7 @@ class KoreanTools:
                             **({"tmap_error": type(e).__name__} if os.environ.get("TMAP_APP_KEY") else {})})
             legs.append(leg)
         return {"status": "ok", "order": [p["name"] for p in order], "legs": legs,
+                "points": [{"name": p["name"], "lat": p["lat"], "lon": p["lon"], "coord_source": p["coord_source"]} for p in order],
                 "total_walk_minutes": sum(l["minutes"] for l in legs), "missing_coords": missing,
                 "caveats": ["도보 기준. 계단·경사·공사 등 당일 상황과 운영시간 순서는 별도로 확인",
                             *(["좌표 미확인 장소는 동선에서 제외: " + ", ".join(missing)] if missing else [])]}

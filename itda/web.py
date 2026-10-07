@@ -208,6 +208,7 @@ class Handler(BaseHTTPRequestHandler):
 
 PAGE = r"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>잇다 ItDA</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"><script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link href="https://fonts.googleapis.com/css2?family=Noto+Serif+KR:wght@600;700&family=Noto+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet">
 <style>
 :root{--bg:#f6f2e9;--paper:#fffdf8;--card:#fff;--fg:#1d1b18;--mut:#6f685d;--line:#e4dccd;--acc:#b23a2b;--acc2:#1f6f6b;--gold:#c99a2e;--ok:#2f6f4f;--warn:#a5631a;--bad:#a32d2d;--chip:#f1ebdf}
@@ -329,6 +330,10 @@ function renderUser(d){
     if((P.considerations||[]).length)h+=`<div class="card"><b>코스에 이렇게 반영했어요</b><ul>${P.considerations.map(c=>`<li><b>${esc(c.need)}</b> → ${esc(c.how_applied)}</li>`).join('')}</ul><div class="mut small">추정이 틀렸다면 아래 ‘이어서 물어보기’로 알려 주세요.</div></div>`;
   }
   if((P.day_card||[]).length)h+=`<h2>📱 오늘의 카드</h2><div class="phone"><div class="t">${esc(P.title)}</div><ul>${P.day_card.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div><p class="mut small" style="text-align:center">화면을 캡처해 두면 현장에서 바로 볼 수 있어요.</p>`;
+  const MP=R.map;
+  if(MP&&(MP.points||[]).length>=2)h+=`<h2>🧭 동선 지도</h2><div id="map" style="height:340px;border-radius:14px;border:1px solid var(--line)"></div>
+    <div class="card"><ol style="margin:0">${(MP.legs||[]).map(l=>`<li>${esc(l.from)} → ${esc(l.to)} · <b>${esc(l.minutes)}분</b> (${Math.round((l.meters||0)/10)/100}km) <span class="mut small">${esc(l.method)}</span></li>`).join('')}</ol>
+    <div class="mut small">총 도보 ${esc(MP.total_walk_minutes)}분 · 지도 © OpenStreetMap · 경로 ${MP.legs&&MP.legs.some(l=>l.path)?'TMAP':'직선 추정'}</div></div>`;
   if((P.itinerary||[]).length)h+=`<h2>🗺 일정</h2><div class="tl">${P.itinerary.map(i=>`<div class="it"><span class="time">${esc(i.time)}</span><h3>${esc(i.place)}${fn(i.evidence)}</h3><div>${esc(i.activity)}</div>${i.access_notes?`<div class="note">♿ ${esc(i.access_notes)}</div>`:''}</div>`).join('')}</div>`;
   if((P.phrase_cards||[]).length)h+=`<h2>🗣 직원에게 이 화면을 보여주세요</h2>`+P.phrase_cards.map(c=>`<div class="show"><div class="mut small">${esc(c.person)} · ${esc(c.situation)}</div><div class="ko">${esc(c.show_to_staff)}</div><div class="mut">${esc(c.meaning)}</div></div>`).join('');
   if((P.dietary_plan||[]).length)h+=`<h2>🍽 식사 안내</h2>`+P.dietary_plan.map(x=>`<div class="card"><h3>${esc(x.person)} ${(x.needs||[]).map(n=>`<span class="b r">${esc(n)}</span>`).join(' ')}${fn(x.evidence)}</h3><div>${esc(x.guidance)}</div>${x.ask_on_site?`<div class="mut small">현장에서 물어볼 것: ${esc(x.ask_on_site)}</div>`:''}</div>`).join('');
@@ -351,6 +356,12 @@ function renderUser(d){
    <div class="mut small">이전 초안을 바탕으로 같은 검증 과정을 다시 거쳐 답해요 (약 1분).</div></div>`;
   h+=`<p class="mut small">🛡 이 코스는 NVIDIA OpenShell 보안 샌드박스 안에서 Nemotron이 만들었습니다. 허용된 공식 API 외에는 외부로 아무것도 보내지 않으며, 자료 속 의심스러운 지시는 따르지 않습니다.</p>`;
   $('#res').innerHTML=h;$('#res').hidden=false;$('#dev').hidden=true;
+  if(MP&&(MP.points||[]).length>=2&&window.L){const m=L.map('map',{scrollWheelZoom:false});
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m);
+    const pts=MP.points.map(p=>[p.lat,p.lon]);
+    MP.points.forEach((p,i)=>L.marker([p.lat,p.lon],{icon:L.divIcon({className:'',html:`<div style="background:#b23a2b;color:#fff;border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;font-weight:700;border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)">${i+1}</div>`,iconSize:[26,26],iconAnchor:[13,13]})}).addTo(m).bindPopup(`<b>${i+1}. ${esc(p.name)}</b>`));
+    (MP.legs||[]).forEach((l,i)=>{const line=(l.path&&l.path.length>1)?l.path:[pts[i],pts[i+1]];L.polyline(line,{color:'#1f6f6b',weight:5,opacity:.85,dashArray:l.path?null:'6 8'}).addTo(m)});
+    m.fitBounds(L.latLngBounds(pts).pad(0.25));}
   document.querySelectorAll('sup.fn').forEach(e=>e.onclick=()=>{const t=document.getElementById('src-'+e.dataset.i);if(!t)return;document.querySelectorAll('.src.hl').forEach(x=>x.classList.remove('hl'));t.classList.add('hl');t.scrollIntoView({behavior:'smooth',block:'center'})});
 }
 function renderDev(d){

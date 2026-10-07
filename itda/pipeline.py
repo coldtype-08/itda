@@ -361,7 +361,9 @@ def run_tools(plan: dict, tools: Tools, visit_date: str | None, max_calls: int =
         log = list(pool.map(one, calls))
     ext = []
     for i, item in enumerate(x for x in log if x["result"].get("ok")):
-        text = json.dumps(item["result"], ensure_ascii=False)[:4000]
+        slim = {**item["result"], "legs": [{k: v for k, v in l.items() if k != "path"} for l in item["result"].get("legs", [])]} \
+            if item["call"].get("tool") == "route" else item["result"]
+        text = json.dumps(slim, ensure_ascii=False)[:4000]
         args = item["call"].get("args") or {}
         label = (args.get("query") or args.get("keyword") or args.get("place") or args.get("topic")
                  or (" → ".join(map(str, args["places"])) if isinstance(args.get("places"), list) else args.get("places")) or "")
@@ -704,6 +706,8 @@ def run(cfg: Config) -> dict:
         "agent_plan": agent_plan,
         "implicit_needs": implicit,
         "context_signals": [{"id": r.id, "label": r.label, "icon": r.icon} for r in rules],
+        "map": next((x["result"] for x in tool_log if x["call"].get("tool") == "route"
+                     and x["result"].get("ok") and x["result"].get("status") == "ok"), None),
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
         "sources": [{**{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",
