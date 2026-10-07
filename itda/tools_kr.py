@@ -16,7 +16,20 @@ from datetime import date
 from typing import Any
 
 TMAP_URL = "https://apis.openapi.sk.com/tmap/routes/pedestrian?version=1"
-TMAP_POI = "https://apis.openapi.sk.com/tmap/pois?version=1&count=1&resCoordType=WGS84GEO&searchKeyword="
+TMAP_POI = "https://apis.openapi.sk.com/tmap/pois?version=1&count=8&resCoordType=WGS84GEO&searchKeyword="
+_AUX = ("주차장", "주유소", "정류장", "정류소", "출구", "입구역", "화장실", "매표소", "충전소", "ATM", "편의점")
+
+
+def _pick_poi(pois: list[dict], query: str) -> dict:
+    """Prefer the place itself over its parking lot / bus stop / exit: exact name, then a name that
+    starts with the query, skipping auxiliary facilities; fall back to the first hit."""
+    q = query.replace(" ", "")
+    main = [p for p in pois if not any(a in (p.get("name") or "") for a in _AUX)] or pois
+    for cond in (lambda n: n == q, lambda n: n.startswith(q), lambda n: q in n):
+        hit = next((p for p in main if cond((p.get("name") or "").replace(" ", ""))), None)
+        if hit:
+            return hit
+    return main[0]
 
 
 def _public_key() -> str:
@@ -120,7 +133,7 @@ class KoreanTools:
                 req = urllib.request.Request(TMAP_POI + urllib.parse.quote(place),
                                              headers={"appKey": os.environ["TMAP_APP_KEY"], "Accept": "application/json"})
                 with urllib.request.urlopen(req, timeout=10) as r:
-                    poi = json.loads(r.read() or b"{}")["searchPoiInfo"]["pois"]["poi"][0]
+                    poi = _pick_poi(json.loads(r.read() or b"{}")["searchPoiInfo"]["pois"]["poi"], place)
                 lat = float(poi.get("frontLat") or poi.get("noorLat"))
                 lon = float(poi.get("frontLon") or poi.get("noorLon"))
                 return lat, lon, f"TMAP POI '{poi.get('name')}'"
