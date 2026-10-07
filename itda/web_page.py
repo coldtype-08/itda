@@ -59,7 +59,7 @@ body{@apply bg-paper text-ink antialiased font-sans;word-break:keep-all}
   <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-cel-500"></span>Nemotron 3 Super</li>
   <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-cel-500"></span>NIM · Nano on L40S</li>
   <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-cel-500"></span>NeMoClaw 에이전트</li>
-  <li class="flex items-center gap-2"><span class="h-1.5 w-1.5 rounded-full bg-cel-500"></span>OpenShell 샌드박스</li></ul>
+  <li class="flex items-center gap-2" id="stk-os"><span class="h-1.5 w-1.5 rounded-full bg-cel-500"></span>OpenShell 샌드박스</li></ul>
  <div class="mt-auto rounded-2xl bg-cel-50 p-4">
   <div class="text-[11px] font-medium text-cel-600">한글날 · 10월 9일</div>
   <div class="mt-1 text-[14px] font-semibold text-cel-900">훈민정음 반포 580돌</div>
@@ -73,7 +73,7 @@ body{@apply bg-paper text-ink antialiased font-sans;word-break:keep-all}
   <div class="flex items-center gap-2 lg:hidden"><span class="flex h-8 w-8 items-center justify-center rounded-lg bg-cel-500 text-sm font-bold text-white">잇</span><span class="font-semibold">잇다</span></div>
   <div class="hidden text-sm text-slate-400 lg:block">잇다 <span class="mx-1.5">/</span><span class="text-ink">한국 문화·역사 여행 에이전트</span></div>
   <div class="flex items-center gap-2 text-xs">
-   <span class="pill bg-white text-slate-600 ring-1 ring-line"><span class="h-1.5 w-1.5 rounded-full bg-cel-500"></span>샌드박스 연결됨</span>
+   <span id="runpill" class="pill bg-white text-slate-600 ring-1 ring-line"><span class="h-1.5 w-1.5 rounded-full bg-cel-500"></span>OpenShell 샌드박스에서 실행</span>
    <span class="hidden sm:block"><span class="pill bg-white text-slate-600 ring-1 ring-line">초안까지만 · 예약/결제 안 함</span></span></div></div></header>
 
 <main class="mx-auto max-w-6xl px-5 pb-24 lg:px-8" id="top">
@@ -127,6 +127,9 @@ body{@apply bg-paper text-ink antialiased font-sans;word-break:keep-all}
 <script>
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let visitor='auto',mode='challenge',lang='',lastJob=null;
+const RUNNER='__ITDA_RUNNER__';  // filled by the server: 'sandbox' only when started with scripts/web_up.sh
+if(RUNNER!=='sandbox'){$('#runpill').innerHTML='<span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>호스트 실행 · 샌드박스 아님';$('#runpill').classList.add('text-amber-700');
+  $('#stk-os').innerHTML='<span class="h-1.5 w-1.5 rounded-full bg-amber-400"></span>OpenShell 샌드박스 (사용 안 함)'}
 const pick=(sel,single,cb)=>document.querySelectorAll(sel+' button').forEach(b=>b.onclick=()=>{if(single)document.querySelectorAll(sel+' button').forEach(x=>x.classList.remove('on'));b.classList.toggle('on',single?true:!b.classList.contains('on'));cb&&cb(b)});
 pick('#mode',true,b=>{mode=b.dataset.v;$('#live').hidden=mode!=='live';
   $('#reqlbl').innerHTML=mode==='live'?'어디로, 무엇을 하고 싶으세요?':'무엇을 해 드릴까요? <span class="font-normal text-slate-400">(비워 두면 기본 과제)</span>';
@@ -226,7 +229,9 @@ function renderUser(d){
   h+=sec('💬','이어서 물어보기',`<div class="kcard"><div class="flex flex-wrap gap-2">${SUG.map(q=>`<button class="chip" onclick="askFollow(this.textContent)">${esc(q)}</button>`).join('')}</div>
     <div class="mt-4 flex gap-2"><input id="fq" class="field" placeholder="예) 아버지가 오래 못 걸으셔서 택시 위주로 바꿔 주세요" onkeydown="if(event.key==='Enter')askFollow(this.value)"><button class="shrink-0 rounded-xl bg-cel-600 px-5 text-[14px] font-semibold text-white transition hover:bg-cel-700" onclick="askFollow(document.getElementById('fq').value)">보내기</button></div>
     <p class="mt-2 text-xs text-slate-400">이전 초안을 바탕으로 같은 검증 과정을 다시 거쳐 답해요 (약 1분).</p></div>`);
-  h+=`<p class="mt-10 rounded-2xl bg-cel-50 px-5 py-4 text-center text-xs leading-relaxed text-cel-800">🛡 이 결과는 NVIDIA OpenShell 보안 샌드박스 안에서 Nemotron이 만들었어요. 허용된 공식 API 외에는 아무것도 외부로 보내지 않고, 자료 속 의심스러운 지시는 따르지 않아요.</p>`;
+  h+=(d.runner||RUNNER)==='sandbox'
+    ?`<p class="mt-10 rounded-2xl bg-cel-50 px-5 py-4 text-center text-xs leading-relaxed text-cel-800">🛡 이 결과는 NVIDIA OpenShell 보안 샌드박스 안에서 Nemotron이 만들었어요. 허용된 공식 API 외에는 아무것도 외부로 보내지 않고, 자료 속 의심스러운 지시는 따르지 않아요.</p>`
+    :`<p class="mt-10 rounded-2xl bg-amber-50 px-5 py-4 text-center text-xs leading-relaxed text-amber-800">⚠️ 이 결과는 샌드박스 밖(호스트)에서 실행됐어요. 파일·네트워크 제한은 앱 코드(PathGuard·도구 허용 목록)만 적용됐어요. OpenShell 샌드박스 실행은 <code>sh scripts/web_up.sh</code>로 띄운 데모에서 확인하세요.</p>`;
   $('#res').innerHTML=h;$('#res').hidden=false;$('#dev').hidden=true;
   if(hasMap&&window.L){const m=L.map('map',{scrollWheelZoom:false,zoomControl:true});L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',{maxZoom:19,attribution:'© OpenStreetMap'}).addTo(m);
     const pts=MP.points.map(p=>[p.lat,p.lon]);

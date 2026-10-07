@@ -41,7 +41,7 @@ process:
 network_policies:
   # Nemotron 3 Super (build.nvidia.com NIM).
   # 샌드박스는 OpenShell 게이트웨이의 추론 라우터(inference.local)만 부릅니다.
-  # 실제 NVIDIA 엔드포인트(integrate.api.nvidia.com) 호출과 API 키는 샌드박스 밖 게이트웨이에만 있습니다.
+  # NVIDIA API 키와 실제 엔드포인트(integrate.api.nvidia.com) 호출은 샌드박스 밖 게이트웨이에만 있습니다.
   # 게이트웨이 라우팅 없이 직접 부르는 환경이라면 host 를 integrate.api.nvidia.com 으로 바꿉니다.
   nim_chat:
     name: nim-chat

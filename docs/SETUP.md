@@ -25,7 +25,7 @@ git clone https://github.com/coldtype-08/itda.git ~/itda && cd ~/itda
 cp .env.example ~/.itda.env && chmod 600 ~/.itda.env && nano ~/.itda.env   # NVIDIA_API_KEY 필수, 나머지 선택
 ```
 
-키는 **레포가 아니라 `~/.itda.env`** 에만 둔다. 샌드박스에는 올라가지 않는다.
+키는 **레포가 아니라 `~/.itda.env`** 에만 둔다. NVIDIA 키는 샌드박스에 올라가지 않는다(게이트웨이 `inference.local`이 붙인다). 도구 키(네이버·공공데이터·TMAP·AKS·Tavily·Brave)는 `web_up.sh`가 켜는 `ITDA_SANDBOX_TOOL_KEYS=1` 때문에 샌드박스 환경변수로 들어가며, 정책상 해당 API 호스트·경로로만 나갈 수 있다.
 
 ## 2. 한 번에 설치 + 검증
 

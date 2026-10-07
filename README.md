@@ -83,7 +83,7 @@ flowchart LR
 | **Nemotron 3 Super 120B** (`nvidia/nemotron-3-super-120b-a12b`) | 계획·주제별 검증·종합·근거 확인. thinking을 끄고(`enable_thinking: false`) 호출당 지연을 줄였습니다 |
 | **NIM** | build.nvidia.com NIM 엔드포인트(Super) + **L40S의 로컬 NIM 컨테이너**(Nemotron 3 Nano 1.7.0, 문서별 작은 분류 작업) |
 | **NeMoClaw** | `nemo-deepagents`로 샌드박스 `itda-hack`을 Restricted 등급으로 만들고, API별 정책 프리셋을 관리합니다 |
-| **OpenShell** | Landlock 파일 격리, 메서드·경로 단위 L7 네트워크 정책, 실행 파일 단위 허용, API 키는 게이트웨이에만 보관 |
+| **OpenShell** | Landlock 파일 격리, 메서드·경로 단위 L7 네트워크 정책, 실행 파일 단위 허용, NVIDIA API 키는 게이트웨이에만 보관(`inference.local`) |
 | **L40S** | 로컬 NIM(Nano) 서빙과 에이전트·웹 데모 실행 |
 
 ## 설치 및 실행
@@ -102,7 +102,7 @@ cp .env.example ~/.itda.env && chmod 600 ~/.itda.env
 python3 -m itda --visitor foreign --interests history,family
 python3 eval/run_eval.py                 # 연습 과제 함정 체크리스트
 
-# 3) OpenShell 샌드박스 안에서 실행 (모델 키는 게이트웨이에만 있음)
+# 3) OpenShell 샌드박스 안에서 실행 (NVIDIA 키는 게이트웨이에만 있음)
 SANDBOX=itda-hack sh scripts/sandbox_run.sh --visitor foreign --interests history,family
 
 # 4) 웹 데모 (토큰 보호 + Cloudflare 터널 공개 링크, 실행은 샌드박스에서)
@@ -118,7 +118,7 @@ sh scripts/web_up.sh                     # 중지: sh scripts/web_up.sh stop
 - **데모 URL**: <https://shareholders-aluminium-prince-understand.trycloudflare.com/?t=rYAvNFT4PvTp>
   - 링크에 접속 토큰이 들어 있어 그대로 열면 됩니다. 처음 한 번 열면 이후에는 쿠키로 유지됩니다.
   - 서버를 다시 띄우면 주소가 바뀝니다. 열리지 않으면 제출 Slack 글의 최신 링크를 확인해 주세요.
-- 데모는 L40S 서버에서 돌아가고, 요청마다 에이전트가 **OpenShell 샌드박스 안에서** 실행됩니다.
+- 데모는 L40S 서버에서 `sh scripts/web_up.sh`로 띄웠고, 요청마다 에이전트가 **OpenShell 샌드박스 안에서** 실행됩니다. 화면 오른쪽 위에 `OpenShell 샌드박스에서 실행`이 보이면 샌드박스 실행입니다.
 
 ### 2. 단계별 확인 (약 5분)
 
@@ -136,7 +136,7 @@ sh scripts/web_up.sh                     # 중지: sh scripts/web_up.sh stop
 
 ### 3. 서버에서 데모 띄우기 (데모 담당)
 
-환경이 이미 설치된 서버(`~/itda`)라면 두 줄이면 됩니다. 마지막에 출력되는 `share this link:` 주소가 공유할 데모 URL입니다.
+데모는 반드시 `sh scripts/web_up.sh`로 띄웁니다. 이 스크립트만 에이전트를 샌드박스 안에서 실행합니다(`ITDA_RUNNER=sandbox`). 환경이 이미 설치된 서버(`~/itda`)라면 두 줄이면 되고, 마지막에 출력되는 `share this link:` 주소가 공유할 데모 URL입니다.
 
 ```bash
 cd ~/itda && git pull
@@ -147,7 +147,7 @@ sh scripts/web_up.sh stop && sh scripts/web_up.sh
 
 ### 4. 내 컴퓨터에서 확인 (샌드박스 없이)
 
-build.nvidia.com API 키만 있으면 됩니다. 에이전트가 호스트에서 바로 실행되고, `http://localhost:8501`에서 같은 화면을 볼 수 있습니다.
+화면과 에이전트 동작만 빠르게 볼 때 쓰는 방법입니다. **에이전트가 샌드박스 밖(호스트)에서 실행되므로** 화면 오른쪽 위에 `호스트 실행 · 샌드박스 아님`이 표시되고, 결과 아래 안내도 호스트 실행으로 바뀝니다. 파일·네트워크 제한은 앱 코드(PathGuard·도구 허용 목록)만 적용됩니다. build.nvidia.com API 키만 있으면 되고, `http://localhost:8501`에서 열립니다.
 
 ```bash
 git clone https://github.com/coldtype-08/itda.git && cd itda
@@ -186,7 +186,7 @@ restricted/, secrets/            올리지 않음          허용 목록 밖 →
 | (적지 않음) | `restricted`, `secrets` | 허용 목록에 없으면 접근할 수 없습니다. 이 둘은 허용 경로 아래에 두지 않고, 샌드박스에 올리지도 않습니다 |
 | `landlock.compatibility` | `hard_requirement` | 파일 제한을 적용하지 못하면 기동 자체를 거부합니다 |
 | `process.run_as_user` / `run_as_group` | `sandbox` | root가 아닌 계정으로 실행합니다 |
-| `network_policies` | NIM만: `inference.local:443`(게이트웨이 → build.nvidia.com), 로컬 NIM `host.openshell.internal:8000` | 그 밖의 모든 외부 연결은 기본으로 거부됩니다. NVIDIA 엔드포인트 호출과 API 키는 샌드박스 밖 게이트웨이에만 있습니다 |
+| `network_policies` | NIM만: `inference.local:443`(게이트웨이 → build.nvidia.com), 로컬 NIM `host.openshell.internal:8000` | 그 밖의 모든 외부 연결은 기본으로 거부됩니다. NVIDIA API 키와 실제 엔드포인트 호출은 샌드박스 밖 게이트웨이에만 있습니다 |
 | └ `protocol` / `enforcement` | `rest` / `enforce` | 기본값 `audit`은 기록만 하고 요청을 통과시킵니다 |
 | └ `rules` | `POST /v1/chat/completions`만 허용 | 같은 호스트의 다른 API는 막습니다 |
 | └ `binaries` | 실제 파이썬 실행 파일 하나(`/opt/venv/bin/python3`) | 넓은 패턴(`/**`)은 쓰지 않습니다. `curl` 같은 다른 프로그램은 허용 호스트로도 나가지 못합니다 |
@@ -220,7 +220,9 @@ restricted/, secrets/            올리지 않음          허용 목록 밖 →
 
 - **보내는 것**: 장소명 같은 검색어, 날짜, 좌표. 로컬 자료 파일은 외부로 보내지 않습니다.
 - **받은 것**: 검색·API 결과도 그대로 믿지 않고, 로컬 자료와 같은 분류·인용 확인·합의 과정을 거칩니다.
-- **키**: 서버의 `~/.itda.env`(권한 600)에만 있습니다. 모델 키는 샌드박스에 들어가지 않습니다(게이트웨이 라우팅). 도구 키는 `ITDA_SANDBOX_TOOL_KEYS`로 켰을 때만 환경변수로 들어가며, 그 키로 나갈 수 있는 곳은 위 허용 범위뿐입니다.
+- **키**: 모든 키는 서버의 `~/.itda.env`(권한 600)에 두고 레포에는 넣지 않습니다.
+  - **NVIDIA API 키**는 샌드박스에 들어가지 않습니다. 샌드박스는 게이트웨이(`inference.local`)만 부르고, 키는 게이트웨이가 붙입니다.
+  - **도구 키**(네이버·공공데이터포털·TMAP·AKS·Tavily·Brave)는 **샌드박스 안으로 들어갑니다.** 데모(`sh scripts/web_up.sh`)는 `ITDA_SANDBOX_TOOL_KEYS=1`을 켜서 이 키들을 샌드박스 프로세스의 환경변수로 넘깁니다. 대신 그 키를 들고 나갈 수 있는 곳은 위 표의 호스트·메서드·경로뿐이고, 실행 파일도 `/opt/venv/bin/python3`만 허용됩니다. 이 옵션을 끄면 도구 키 없이 실행되고, 해당 도구는 건너뜁니다.
 
 ## 검증
 
@@ -230,6 +232,7 @@ restricted/, secrets/            올리지 않음          허용 목록 밖 →
 | [`eval/run_cases.py`](eval/run_cases.py) | 직접 만든 변형 과제 2개(휠체어 가족 · 일본 단체 할랄)로 일반화 확인 |
 | [`attacks/run_attacks.sh`](attacks/run_attacks.sh) | 샌드박스 안에서 외부 유출, 허용 호스트 악용, 금지 파일 읽기, 시스템 경로 변조를 시도해 모두 차단되는지 확인 |
 | [`scripts/stack_check.sh`](scripts/stack_check.sh) | Nemotron·NIM·NeMoClaw·OpenShell 연결 상태 점검 |
+| [`scripts/collect_evidence.sh`](scripts/collect_evidence.sh) → [`docs/evidence.txt`](docs/evidence.txt) | 서버에서 차단 시연 결과, OpenShell `DENIED` 로그, 적용 정책, 마지막 실행이 샌드박스 경로(`/sandbox/pack/...`)를 읽고 `inference.local`로 추론했다는 기록을 한 파일로 저장 (키 값은 가림) |
 
 개발 중 측정치(실행마다 조금씩 다름): 연습 과제 19–22/23, 변형 과제 25/26.
 

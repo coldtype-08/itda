@@ -36,7 +36,7 @@ if [ -n "${ITDA_SANDBOX_TOOL_KEYS:-}" ]; then
     eval "v=\${$k:-}"; [ -n "$v" ] && TOOLENV="$TOOLENV $k=$v"
   done
 fi
-# inference.local: credentials stay on the host gateway; the sandbox never sees the API key.
+# inference.local: the NVIDIA key stays on the host gateway; the sandbox never sees it.
 $NC exec --workdir /sandbox/itda -- env PYTHONDONTWRITEBYTECODE=1 \
   ITDA_LLM_BASE_URL="${ITDA_SANDBOX_BASE_URL:-https://inference.local/v1}" \
   ITDA_MODEL="${ITDA_MODEL:-nvidia/nemotron-3-super-120b-a12b}" \

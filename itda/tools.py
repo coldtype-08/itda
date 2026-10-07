@@ -3,8 +3,9 @@
 Two layers of control:
   1. here: only tools in TOOLS can run, only against ALLOWED_HOSTS, GET/POST-search only;
   2. OpenShell: the sandbox network policy (policy/presets/, one preset per API) allows exactly these hosts.
-API keys come from env vars. Inside the sandbox those hold OpenShell placeholders that the
-proxy swaps for the real credential only at the bound endpoint, so the agent never sees them.
+API keys come from env vars. scripts/sandbox_run.sh passes them into the sandbox only when
+ITDA_SANDBOX_TOOL_KEYS is set (web_up.sh sets it), as plain env vars: the agent process can read
+them, and the L7 policy limits where they can be sent (allow-listed host + method + path, python3 only).
 Everything a tool returns is untrusted data: it goes through the same triage as local files.
 """
 from __future__ import annotations

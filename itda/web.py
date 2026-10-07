@@ -27,6 +27,11 @@ JOBS: dict[str, dict] = {}
 LOCK = threading.Lock()
 
 
+def _runner() -> str:
+    """Where the agent actually runs. Only scripts/web_up.sh (ITDA_RUNNER=sandbox) runs it inside OpenShell."""
+    return "sandbox" if os.environ.get("ITDA_RUNNER") == "sandbox" else "host"
+
+
 def _live_inputs(job_dir: Path, req: dict) -> tuple[Path, Path]:
     """Live mode: the user's own request becomes TASK.md, and their companions/conditions become a
     structured visitor profile, so the same pipeline (trust checks, consensus, Plan B) runs on real
@@ -121,6 +126,7 @@ def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
         cmd = [sys.executable, "-m", "itda", *args, "--output", str(out)]
         env = dict(os.environ)
     JOBS[job] = {"lines": [f"$ {' '.join(cmd)}"], "done": False, "ok": None, "out": str(out), "t0": time.time(),
+                 "runner": _runner(),
                  "task_file": str(task), "input_dir": str(inp), "mode": req.get("mode")}
 
     def worker() -> None:
@@ -137,7 +143,7 @@ def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
 def _result(job: str) -> dict:
     out = Path(JOBS[job]["out"])
     found = {p.name: p for p in out.rglob("*") if p.is_file()}
-    data: dict = {}
+    data: dict = {"runner": JOBS[job].get("runner", _runner())}
     for name, key in (("itda_result.json", "result"), ("audit.json", "audit")):
         if name in found:
             data[key] = json.loads(found[name].read_text())
@@ -178,7 +184,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "text/html; charset=utf-8")
             if os.environ.get("ITDA_WEB_TOKEN"):
                 self.send_header("Set-Cookie", f"itda_t={os.environ['ITDA_WEB_TOKEN']}; Path=/; HttpOnly; SameSite=Lax")
-            body = PAGE.encode()
+            body = PAGE.replace("__ITDA_RUNNER__", _runner()).encode()
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
