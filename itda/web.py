@@ -46,6 +46,50 @@ def _live_inputs(job_dir: Path, req: dict) -> tuple[Path, Path]:
     return task_dir / "TASK.md", job_dir / "input"
 
 
+CHALLENGE_TASK = ROOT / "challenge" / "TASK.md"
+CHALLENGE_INPUT = ROOT / "challenge" / "hackathon" / "input"
+
+
+def _write_task(task_dir: Path, header: str, body: str) -> Path:
+    task_dir.mkdir(parents=True, exist_ok=True)
+    (task_dir / "TASK.md").write_text(header + body, encoding="utf-8")
+    return task_dir / "TASK.md"
+
+
+def _challenge_query(job_dir: Path, req: dict) -> Path:
+    """Challenge mode with the user's own question about the provided materials."""
+    date = (req.get("date") or "").strip()[:10]
+    comp = (req.get("companions") or "").strip()[:1000]
+    return _write_task(job_dir / "task", "# 요청 (주어진 자료에 대한 사용자 질문)\n",
+                       (req.get("request") or "").strip()[:2000]
+                       + (f"\n\n방문일: {date}" if date else "") + (f"\n동행자·조건: {comp}" if comp else "")
+                       + "\n\n주어진 자료 폴더를 근거로 답한다. 예약·연락·결제는 하지 않는다.\n")
+
+
+def _followup_inputs(job_dir: Path, parent: dict, question: str) -> tuple[Path, Path]:
+    """Follow-up: same materials + the previous draft (as something to revise, not evidence) +
+    the previous task with the new question appended. Runs through the full trust pipeline again."""
+    import shutil
+    inp = job_dir / "input"
+    shutil.copytree(parent["input_dir"], inp, dirs_exist_ok=True)
+    prev = {}
+    found = [p for p in Path(parent["out"]).rglob("itda_result.json")]
+    if found:
+        r = json.loads(found[0].read_text())
+        pl = r.get("plan", {})
+        prev = {k: pl.get(k) for k in ("title", "summary", "itinerary", "dietary_plan", "considerations",
+                                         "decisions", "scenarios", "uncertainties")}
+    (inp / "followup").mkdir(parents=True, exist_ok=True)
+    (inp / "followup" / "previous_draft.json").write_text(
+        json.dumps({"note": "ItDA가 이전에 만든 초안 (사실 근거 아님, 수정 대상)", **prev}, ensure_ascii=False, indent=1),
+        encoding="utf-8")
+    base = Path(parent["task_file"]).read_text(encoding="utf-8")
+    task = _write_task(job_dir / "task", base, f"\n\n[연계 질문]\n{question.strip()[:1000]}\n"
+                       "이전 초안(followup/previous_draft.json)을 바탕으로 이 질문에 답하고, 필요하면 코스를 수정한다. "
+                       "바뀐 점을 분명히 적는다.\n")
+    return task, inp
+
+
 def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
     job = uuid.uuid4().hex[:8]
     out = RUNS / job
@@ -54,8 +98,16 @@ def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
     if req and req.get("lang") in ("ko", "en", "ja", "zh"):
         args += ["--lang", req["lang"]]
     extra_env = {}
-    if req and req.get("mode") == "live":
+    task, inp = CHALLENGE_TASK, CHALLENGE_INPUT
+    req = req or {}
+    parent = JOBS.get(req.get("parent") or "")
+    if parent and (req.get("followup") or "").strip():
+        task, inp = _followup_inputs(RUNS / f"{job}_in", parent, req["followup"])
+    elif req.get("mode") == "live":
         task, inp = _live_inputs(RUNS / f"{job}_in", req)
+    elif (req.get("request") or "").strip():
+        task = _challenge_query(RUNS / f"{job}_in", req)
+    if task != CHALLENGE_TASK or inp != CHALLENGE_INPUT:
         args += ["--task", str(task), "--input", str(inp)]
         extra_env = {"TASK_FILE": str(task), "INPUT_DIR": str(inp)}
     if os.environ.get("ITDA_RUNNER") == "sandbox":
@@ -65,7 +117,8 @@ def _start(visitor: str, interests: list[str], req: dict | None = None) -> str:
     else:
         cmd = [sys.executable, "-m", "itda", *args, "--output", str(out)]
         env = dict(os.environ)
-    JOBS[job] = {"lines": [f"$ {' '.join(cmd)}"], "done": False, "ok": None, "out": str(out), "t0": time.time()}
+    JOBS[job] = {"lines": [f"$ {' '.join(cmd)}"], "done": False, "ok": None, "out": str(out), "t0": time.time(),
+                 "task_file": str(task), "input_dir": str(inp), "mode": req.get("mode")}
 
     def worker() -> None:
         p = subprocess.Popen(cmd, cwd=ROOT, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -143,7 +196,9 @@ class Handler(BaseHTTPRequestHandler):
         interests = [i for i in body.get("interests", []) if i in INTERESTS]
         if visitor not in VISITOR_TYPES or not interests:  # whitelist: nothing user-supplied reaches the shell
             return self._json({"error": "invalid lens"}, 400)
-        if body.get("mode") == "live" and len((body.get("request") or "").strip()) < 5:
+        if body.get("followup") and body.get("parent") not in JOBS:
+            return self._json({"error": "이전 결과를 찾을 수 없어요. 코스를 먼저 만들어 주세요"}, 400)
+        if body.get("mode") == "live" and not body.get("followup") and len((body.get("request") or "").strip()) < 5:
             return self._json({"error": "요청 내용을 적어 주세요"}, 400)
         with LOCK:
             if any(not j["done"] for j in JOBS.values()):
@@ -203,9 +258,9 @@ ul{padding-left:20px}
 <p class="tag-line">흩어진 기록을 믿을 수 있는 하루로 잇습니다 — 공식 공지·현장 기록·검색 결과를 스스로 검증해 나에게 맞는 문화 코스를 만들어요.</p>
 <div class="panel">
  <div class="seg" id="mode"><button class="on" data-v="challenge">📂 주어진 자료로 만들기</button><button data-v="live">✏️ 내 여행 직접 입력</button></div>
+ <div class="lbl" id="reqlbl">무엇을 해 드릴까요? <span class="mut small">(비워 두면 기본 과제)</span></div>
+ <textarea id="req" rows="3" placeholder="예) 주어진 자료로 성진정 해설 카드만 만들어 줘 / 비 오는 날 버전으로 짜 줘"></textarea>
  <div id="live" hidden>
-  <div class="lbl">어디로, 무엇을 하고 싶으세요?</div>
-  <textarea id="req" rows="3" placeholder="예) 토요일에 부모님 모시고 경복궁이랑 근처 전통시장 반나절 코스 짜줘"></textarea>
   <div class="lbl">언제 가세요?</div><input type="date" id="date">
   <div class="lbl">함께 가는 분과 조건</div>
   <textarea id="comp" rows="2" placeholder="예) 아버지 무릎이 안 좋아 계단이 어려움, 어머니 비건, 7살 아이 땅콩 알레르기"></textarea>
@@ -226,23 +281,33 @@ ul{padding-left:20px}
 const $=s=>document.querySelector(s),esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let visitor='auto',mode='challenge',lang='';
 const pick=(sel,single,cb)=>document.querySelectorAll(sel+' button').forEach(b=>b.onclick=()=>{if(single)document.querySelectorAll(sel+' button').forEach(x=>x.classList.remove('on'));b.classList.toggle('on',single?true:!b.classList.contains('on'));cb&&cb(b)});
-pick('#mode',true,b=>{mode=b.dataset.v;$('#live').hidden=mode!=='live'});pick('#vis',true,b=>visitor=b.dataset.v);pick('#lang',true,b=>lang=b.dataset.v);pick('#int',false);
+pick('#mode',true,b=>{mode=b.dataset.v;$('#live').hidden=mode!=='live';
+  $('#reqlbl').innerHTML=mode==='live'?'어디로, 무엇을 하고 싶으세요?':'무엇을 해 드릴까요? <span class="mut small">(비워 두면 기본 과제)</span>';
+  $('#req').placeholder=mode==='live'?'예) 토요일에 부모님 모시고 경복궁이랑 근처 전통시장 반나절 코스 짜줘':'예) 주어진 자료로 성진정 해설 카드만 만들어 줘 / 비 오는 날 버전으로 짜 줘'});pick('#vis',true,b=>visitor=b.dataset.v);pick('#lang',true,b=>lang=b.dataset.v);pick('#int',false);
 pick('#tabs',true,b=>{$('#res').hidden=b.dataset.v!=='user';$('#dev').hidden=b.dataset.v!=='dev'});
 const STEPS=[['①','자료를 모으고 있어요'],['②','무엇을 확인할지 계획하고 검색하고 있어요'],['③','자료끼리 비교해서 믿을 만한지 따지고 있어요'],['④','상황에 맞는 코스를 짜고 있어요'],['⑤','모든 문장의 근거를 다시 확인하고 있어요']];
+let lastJob=null;
+async function startRun(extra){
+  const interests=[...document.querySelectorAll('#int .on')].map(b=>b.dataset.v);
+  $('#go').disabled=true;$('#tabs').hidden=true;$('#prog').hidden=false;
+  const r=await fetch('run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,interests,mode,lang,request:$('#req').value,date:$('#date').value,companions:$('#comp').value,...extra})});
+  const j=await r.json();if(!r.ok){$('#st').textContent=j.error;$('#go').disabled=false;return}
+  pollJob(j.job)}
 $('#go').onclick=async()=>{
   const interests=[...document.querySelectorAll('#int .on')].map(b=>b.dataset.v);
   if(!interests.length){$('#prog').hidden=false;$('#st').textContent='궁금한 주제를 하나 이상 골라 주세요';return}
   if(mode==='live'&&$('#req').value.trim().length<5){$('#prog').hidden=false;$('#st').textContent='어디로 무엇을 하고 싶은지 적어 주세요';return}
   $('#go').disabled=true;$('#res').innerHTML='';$('#dev').innerHTML='';$('#tabs').hidden=true;$('#prog').hidden=false;
-  const r=await fetch('run',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({visitor,interests,mode,lang,request:$('#req').value,date:$('#date').value,companions:$('#comp').value})});
-  const j=await r.json();if(!r.ok){$('#st').textContent=j.error;$('#go').disabled=false;return}
-  const poll=async()=>{const s=await (await fetch('status?job='+j.job)).json();const log=s.lines.join('\n');
+  startRun({})};
+function pollJob(job){
+  const poll=async()=>{const s=await (await fetch('status?job='+job)).json();const log=s.lines.join('\n');
     let k=0;STEPS.forEach((x,i)=>{if(log.includes(x[0]))k=i+1});if(s.done&&s.ok)k=5;
     document.querySelectorAll('.steps div').forEach((d,i)=>d.classList.toggle('on',i<k));
     $('#st').textContent=s.done?(s.ok?`완료 · ${s.elapsed}초`:'실행 중 문제가 생겼어요. 검증 과정 탭에서 로그를 확인하세요.'):`${(STEPS[Math.max(0,k-1)]||STEPS[0])[1]} · ${s.elapsed}초`;
     window._log=log;if(!s.done)return setTimeout(poll,1000);$('#go').disabled=false;
-    if(s.ok){const d=await (await fetch('result?job='+j.job)).json();renderUser(d);renderDev(d);$('#dev').innerHTML+=`<h2>실행 로그</h2><pre>${esc(log)}</pre>`;$('#tabs').hidden=false}
-    else{$('#dev').innerHTML=`<pre>${esc(log)}</pre>`;$('#tabs').hidden=false;$('#dev').hidden=false;$('#res').hidden=true}};poll()};
+    if(s.ok){lastJob=job;const d=await (await fetch('result?job='+job)).json();renderUser(d);renderDev(d);$('#dev').innerHTML+=`<h2>실행 로그</h2><pre>${esc(log)}</pre>`;$('#tabs').hidden=false}
+    else{$('#dev').innerHTML=`<pre>${esc(log)}</pre>`;$('#tabs').hidden=false;$('#dev').hidden=false;$('#res').hidden=true}};poll()}
+function askFollow(q){if(!q||!q.trim()||!lastJob)return;startRun({followup:q,parent:lastJob});window.scrollTo({top:0,behavior:'smooth'})}
 const TYPE={official_notice:'공식 공지',field_survey:'현장 조사',structured_data:'방문단 정보',internal_guideline:'운영 규칙',interpretation_draft:'해설 자료',community_post:'지역 게시판',promotional:'홍보물',personal_blog:'개인 블로그',advertisement:'광고',archive:'과거 기록',web_search:'웹 검색',public_api:'공공 API',external_instruction:'의심되는 외부 지시',other:'기타'};
 const TRUST={use:['믿을 수 있음','g'],use_with_caution:['주의해서 사용',''],background_only:['참고용',''],ignore:['사용 안 함','r']};
 function renderUser(d){
@@ -252,6 +317,9 @@ function renderUser(d){
   const used=(R.sources||[]).filter(s=>s.trust!=='ignore').length;
   let h=`<div class="hero"><h2>${esc(P.title)}</h2><div>${esc(P.summary)}</div><div class="badges"><span class="b r">초안 · 예약/연락하지 않음</span>${R.visit_date?`<span class="b">📅 ${esc(R.visit_date)}</span>`:''}<span class="b">${{foreign:'🌏 해외 방문객',korean:'🇰🇷 한국인'}[R.lens?.visitor_type]||''}</span></div>
    <div class="trust"><div><b>${used}/${(R.sources||[]).length}</b>사용한 자료</div><div><b>${conf}</b>교차 확인된 정보</div><div><b>${(V.untrusted_instructions||[]).length}</b>무시한 의심 지시</div></div></div>`;
+  if(P.answer)h+=`<div class="show" style="border-color:var(--acc2)"><div class="mut small">💬 질문에 대한 답</div><div style="font-size:18px;margin-top:4px">${esc(P.answer)}</div></div>`;
+  if((P.changes||[]).length)h+=`<div class="card"><b>이전 초안 대비 바뀐 점</b><ul>${P.changes.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  if((P.considerations||[]).length)h+=`<h2>🤝 이렇게 배려했어요 <span class="mut small">(말씀하지 않으셨지만 추정해서 반영)</span></h2><div class="card"><ul>${P.considerations.map(c=>`<li><b>${esc(c.need)}</b> → ${esc(c.how_applied)}</li>`).join('')}</ul><div class="mut small">추정이 틀렸다면 아래 ‘이어서 물어보기’로 알려 주세요.</div></div>`;
   if((P.day_card||[]).length)h+=`<h2>📱 오늘의 카드</h2><div class="phone"><div class="t">${esc(P.title)}</div><ul>${P.day_card.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div><p class="mut small" style="text-align:center">화면을 캡처해 두면 현장에서 바로 볼 수 있어요.</p>`;
   if((P.itinerary||[]).length)h+=`<h2>🗺 일정</h2><div class="tl">${P.itinerary.map(i=>`<div class="it"><span class="time">${esc(i.time)}</span><h3>${esc(i.place)}${fn(i.evidence)}</h3><div>${esc(i.activity)}</div>${i.access_notes?`<div class="note">♿ ${esc(i.access_notes)}</div>`:''}</div>`).join('')}</div>`;
   if((P.phrase_cards||[]).length)h+=`<h2>🗣 직원에게 이 화면을 보여주세요</h2>`+P.phrase_cards.map(c=>`<div class="show"><div class="mut small">${esc(c.person)} · ${esc(c.situation)}</div><div class="ko">${esc(c.show_to_staff)}</div><div class="mut">${esc(c.meaning)}</div></div>`).join('');
@@ -268,6 +336,11 @@ function renderUser(d){
   h+=`<h2>📚 출처</h2><div class="card">${order.length?order.map((i,k)=>srcRow(i,k+1)).join(''):'<span class="mut">인용된 출처가 없습니다.</span>'}</div>`;
   const rest=(R.sources||[]).filter(s=>!(s.id in num));
   if(rest.length)h+=`<details class="card"><summary>참고했지만 코스에 쓰지 않은 자료 ${rest.length}개 · 왜 뺐는지 보기</summary>${rest.map(s=>{const t=TRUST[s.trust]||['',''];return `<div class="src"><div class="n">–</div><div><b>${esc(s.label||s.path)}</b> <span class="b">${esc(TYPE[s.source_type]||s.source_type||'')}</span> <span class="b ${t[1]}">${t[0]}</span><div class="mut small">${esc(s.trust_reason||'')}</div></div></div>`}).join('')}</details>`;
+  const SUG=['비가 오면 어떻게 바꿔요?','점심은 어디서 먹을까요?','2시간 안으로 줄여 주세요','아이도 같이 가면요?','이동을 더 줄여 주세요'];
+  h+=`<h2>💬 이어서 물어보기</h2><div class="card"><div class="chips">${SUG.map(q=>`<button class="chip" onclick="askFollow(this.textContent)">${esc(q)}</button>`).join('')}</div>
+   <textarea id="fq" rows="2" style="margin-top:10px" placeholder="예) 아버지가 오래 못 걸으셔서 택시 위주로 바꿔 주세요"></textarea>
+   <button class="go" style="margin-top:8px" onclick="askFollow(document.getElementById('fq').value)">이어서 물어보기</button>
+   <div class="mut small">이전 초안을 바탕으로 같은 검증 과정을 다시 거쳐 답해요 (약 1분).</div></div>`;
   h+=`<p class="mut small">🛡 이 코스는 NVIDIA OpenShell 보안 샌드박스 안에서 Nemotron이 만들었습니다. 허용된 공식 API 외에는 외부로 아무것도 보내지 않으며, 자료 속 의심스러운 지시는 따르지 않습니다.</p>`;
   $('#res').innerHTML=h;$('#res').hidden=false;$('#dev').hidden=true;
   document.querySelectorAll('sup.fn').forEach(e=>e.onclick=()=>{const t=document.getElementById('src-'+e.dataset.i);if(!t)return;document.querySelectorAll('.src.hl').forEach(x=>x.classList.remove('hl'));t.classList.add('hl');t.scrollIntoView({behavior:'smooth',block:'center'})});

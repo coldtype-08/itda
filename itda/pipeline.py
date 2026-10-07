@@ -398,12 +398,14 @@ def _detect_language(task: str, docs: list[Doc]) -> str | None:
     return None
 
 
-def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: str = "") -> dict:
+def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: str = "",
+               implicit: list | None = None) -> dict:
     system = prompts.SYNTH_SYSTEM.format(language=LANG_NAMES.get(cfg.language, cfg.language),
                                          deliverable=deliverable or "과제에 적힌 대로")
     user = prompts.SYNTH_USER.format(
         task=task, visitor_type=cfg.visitor_type, lens=prompts.LENS[cfg.visitor_type],
         interests=", ".join(f"{i}({prompts.INTEREST[i]})" for i in cfg.interests),
+        implicit=json.dumps(implicit or [], ensure_ascii=False),
         resolved=json.dumps(resolved, ensure_ascii=False, indent=1))
     return llm.chat_json(system, user, cfg.model_main, "synthesize",
                          mock=lambda: {"title": "ItDA draft (mock)", "summary": "", "itinerary": [],
@@ -412,7 +414,7 @@ def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: st
 
 
 _PLAN_LISTS = ("itinerary", "dietary_plan", "interpretation", "uncertainties", "approvals_needed", "not_done",
-               "day_card", "phrase_cards", "decisions", "scenarios")
+               "day_card", "phrase_cards", "decisions", "scenarios", "considerations", "changes")
 
 
 def _normalize_plan(plan) -> dict:
@@ -421,7 +423,7 @@ def _normalize_plan(plan) -> dict:
     for k in _PLAN_LISTS:
         v = plan.get(k)
         plan[k] = v if isinstance(v, list) else ([] if v in (None, "") else [v])
-    for k in ("title", "summary", "deliverable_text"):
+    for k in ("title", "summary", "deliverable_text", "answer"):
         if not isinstance(plan.get(k), str):
             plan[k] = "" if plan.get(k) is None else str(plan.get(k))
     plan["title"] = plan["title"] or "ItDA"
@@ -508,6 +510,13 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
     out = [f"# {plan.get('title', 'ItDA')}", "",
            f"> **{L('초안', 'DRAFT')}** · {L('예약·연락·발송하지 않았습니다', 'Nothing has been booked, sent or posted')} · "
            f"lens: {cfg.visitor_type} / {', '.join(cfg.interests)} / {cfg.language}", "", plan.get("summary", ""), ""]
+    if plan.get("answer"):
+        out += [f"## {L('질문에 대한 답', 'Answer')}", "", plan["answer"], ""]
+    if plan.get("changes"):
+        out += [f"## {L('이전 초안 대비 바뀐 점', 'What changed')}", ""] + [f"- {x}" for x in plan["changes"]] + [""]
+    if plan.get("considerations"):
+        out += [f"## {L('이렇게 배려했어요 (추정)', 'Thoughtful touches (assumed)')}", ""]
+        out += [f"- **{c.get('need', '')}** → {c.get('how_applied', '')}" for c in plan["considerations"] if isinstance(c, dict)] + [""]
     if plan.get("day_card"):
         out += [f"## {L('한눈에 보는 일정 카드', 'Day card')}", ""] + [f"- {x}" for x in plan["day_card"]] + [""]
     if plan.get("phrase_cards"):
@@ -631,7 +640,10 @@ def run(cfg: Config) -> dict:
     _progress(f"   정족수 판정: 확정 {qs.count('confirmed')} · 잠정 {qs.count('tentative')} · 미결 {qs.count('unresolved')}")
     audit.log("quorum", confirmed=qs.count("confirmed"), tentative=qs.count("tentative"), unresolved=qs.count("unresolved"))
     _progress(f"④ 종합 시작 ({cfg.model_main})")
-    plan = _normalize_plan(synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or "")))
+    implicit = agent_plan.get("implicit_needs") if isinstance(agent_plan.get("implicit_needs"), list) else []
+    if implicit:
+        _progress("   추정 배려: " + ", ".join(str(x.get("need", x))[:30] for x in implicit[:6] if isinstance(x, dict)))
+    plan = _normalize_plan(synthesize(cfg, llm, task, resolved, str(agent_plan.get("deliverable") or ""), implicit))
     _progress(f"⑤ 근거 검사 시작 ({cfg.model_main})")
     plan, removed = ground_check(cfg, llm, plan, resolved, docs, triaged)
     plan = _normalize_plan(plan)
@@ -670,6 +682,7 @@ def run(cfg: Config) -> dict:
         "grounding_removed": removed,
         "consensus": cons,
         "agent_plan": agent_plan,
+        "implicit_needs": implicit,
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
         "sources": [{**{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",

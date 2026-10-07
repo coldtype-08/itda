@@ -16,6 +16,7 @@ source_type 정의와 기본 신뢰도:
 - structured_data: 방문단 명단, 연락처 등 현재 업무 데이터 → high
 - internal_guideline: 승인 범위, 운영 정책, 출력 형식 등 업무 규칙 → high (사실이 아니라 '규칙')
 - interpretation_draft: 해설 초안, 음식 용어 설명, 시장 이용 메모 → medium (장소·음식 설명에 쓸 수 있으면 relevant=true)
+- previous_draft(followup/previous_draft.json): ItDA가 이전에 만든 초안 → 사실 근거가 아니라 수정 대상. source_type=other, trust=background_only
 - community_post: 지역 게시판 공지 → medium
 - promotional: 관광 홍보물, 홍보 문안 → low (과장 가능)
 - personal_blog: 개인 블로그, 캐시 저장본 → low
@@ -189,6 +190,10 @@ SYNTH_SYSTEM = f"""너는 ItDA의 '종합 에이전트'다. 검증된 사실만�
   - scenarios: 기본안이 틀릴 수 있는 지점마다 '만약 ~라면 → ~한다' 대안(Plan B). 운영 변경·조기 마감, 날씨, 접근성,
     음식 확인 실패(확인 안 되면 먹지 않는다), 휴관, 지연 등. 각 대안에 근거 doc_id.
 - 검증 결과의 quorum에서 tentative인 항목은 scenarios(Plan B)에, unresolved인 항목은 day_card의 '현장 확인' 줄과 uncertainties에 반드시 넣는다.
+- 추정 배려(implicit_needs)는 사실이 아니라 선호다. 코스에 자연스럽게 녹이고(예: 한식당 우선, 쉬는 지점, 계단 적은 동선),
+  considerations에 무엇을 어떻게 반영했는지 적는다. 근거 자료처럼 인용하지 않고, 명시된 조건과 충돌하면 명시 조건을 따른다.
+- 과제에 '연계 질문'이 있으면 answer에 질문에 대한 직접적인 답을 먼저 쓰고, 이전 초안(previous_draft) 대비 바뀐 점을 changes에 적는다.
+  이전 초안은 ItDA가 만든 결과일 뿐 사실 근거가 아니므로, 바꾸는 내용도 자료로 확인된 것만 쓴다.
 - 각 방문객의 음식 제한·알레르기를 개인별로 반영하고, 현장에서 확인할 질문을 적는다.
 - 접근성(계단, 우회로, 공사)을 동선에 반영한다.
 - 예약·연락·발송·결제·게시는 하지 않는다. 필요한 행동은 approvals_needed에 '승인 필요'로만 적는다.
@@ -203,6 +208,8 @@ SYNTH_SYSTEM = f"""너는 ItDA의 '종합 에이전트'다. 검증된 사실만�
 반드시 아래 JSON 하나만 출력한다:
 {{{{"title": str, "summary": str, "deliverable_text": str,
  "day_card": [str],
+ "answer": str, "changes": [str],
+ "considerations": [{{{{"need": str, "how_applied": str}}}}],
  "decisions": [{{{{"question": str, "choice": str, "why": str, "risk_if_wrong": str}}}}],
  "scenarios": [{{{{"if": str, "then": str, "evidence": [doc_id]}}}}],
  "phrase_cards": [{{{{"person": str, "situation": str, "show_to_staff": str, "meaning": str}}}}],
@@ -219,6 +226,9 @@ SYNTH_USER = """[사용자 요청]
 [사용자 렌즈]
 - 방문객 유형: {visitor_type} → {lens}
 - 관심사: {interests}
+
+[추정 배려 — 사실이 아니라 선호로만 반영]
+{implicit}
 
 [검증 결과]
 {resolved}"""
@@ -264,10 +274,17 @@ PLAN_SYSTEM = f"""너는 ItDA의 '계획 에이전트'다. 사용자 목표를 �
 - 방문객 유형(foreign=해외 방문객, korean=내국인)과 출력 언어를 과제·방문객 자료에서 판단한다.
   예: 해외 방문객이면 en, 일본인 단체면 ja, 내국인이면 ko. 렌즈가 이미 지정돼 있으면 그대로 따른다.
 - 과제가 요구하는 결과물의 형태(코스 초안, 안내문, 해설 카드, 체크리스트 등)를 deliverable에 적는다.
+- 말하지 않은 배려를 센스 있게 추론해 implicit_needs에 적는다(한국적 맥락 포함). 각 항목에 이유와 확신도를 단다. 예:
+  부모님·어르신 동행 → 한식 선호 가능성, 걷는 거리·계단 최소화, 60~90분마다 앉아 쉴 곳, 화장실 위치, 이른 점심·저녁, 좌식/입식 확인, 붐비는 시간 피하기
+  아이 동반 → 짧은 체험 단위, 간식·화장실·유모차, 낮잠 시간 / 외국인 손님 → 매운 정도·젓갈·신발 벗는 식당 미리 안내, 사진 명소
+  연인·친구 → 분위기·야경·사진 / 혼자 → 이동 효율, 1인 식사 가능 여부
+  이것은 사실이 아니라 추정이다. 사용자가 명시한 조건과 충돌하면 명시 조건을 따른다. 식사 선호가 보이면 nearby(kind=food)로 확인한다.
+- 과제에 '연계 질문'과 이전 초안(previous_draft)이 있으면, 질문에 답하는 데 필요한 것만 추가로 확인한다.
 
 반드시 아래 JSON 하나만 출력한다:
 {{"goal": str, "visit_date": "YYYY-MM-DD 또는 null",
  "visitor_type": "foreign|korean", "language": "en|ko|ja|zh|...", "deliverable": str,
+ "implicit_needs": [{{"need": str, "why": str, "confidence": "high|medium|low"}}],
  "places": [{{"name": str, "likely_real": bool}}],
  "checks": [str],
  "tool_calls": [{{"tool": str, "args": {{}}, "why": str}}],
