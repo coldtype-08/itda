@@ -223,6 +223,32 @@ def run_tools(plan: dict, tools: Tools, visit_date: str | None, max_calls: int =
 
 
 LANG_NAMES = {"en": "English", "ko": "한국어", "ja": "日本語", "zh": "中文", "es": "Español", "fr": "Français"}
+_LANG_ALIASES = {"japanese": "ja", "日本語": "ja", "일본어": "ja", "jp": "ja", "english": "en", "영어": "en",
+                 "korean": "ko", "한국어": "ko", "kr": "ko", "chinese": "zh", "中文": "zh", "중국어": "zh",
+                 "spanish": "es", "french": "fr"}
+_LANG_HINTS = [(re.compile(r"일본인|일본\s*(단체|관광객)|japanese", re.I), "ja"),
+               (re.compile(r"중국인|중국\s*(단체|관광객)|chinese", re.I), "zh")]
+
+
+def _norm_lang(v: str | None) -> str | None:
+    if not v:
+        return None
+    v = str(v).strip()
+    return _LANG_ALIASES.get(v.lower(), v.lower()[:2] if len(v) <= 5 else None)
+
+
+def _detect_language(task: str, docs: list[Doc]) -> str | None:
+    """Deterministic language signal: an explicit "language" field in structured visitor data wins,
+    then nationality words in the task. The planner's guess is only used when this finds nothing."""
+    for d in docs:
+        if d.path.endswith(".json"):
+            m = re.search(r'"(?:language|lang)"\s*:\s*"([^"]+)"', d.text)
+            if m and _norm_lang(m.group(1)):
+                return _norm_lang(m.group(1))
+    for pat, code in _LANG_HINTS:
+        if pat.search(task):
+            return code
+    return None
 
 
 def synthesize(cfg: Config, llm: LLM, task: str, resolved: dict, deliverable: str = "") -> dict:
@@ -280,6 +306,13 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
     out = [f"# {plan.get('title', 'ItDA')}", "",
            f"> **{L('초안', 'DRAFT')}** · {L('예약·연락·발송하지 않았습니다', 'Nothing has been booked, sent or posted')} · "
            f"lens: {cfg.visitor_type} / {', '.join(cfg.interests)} / {cfg.language}", "", plan.get("summary", ""), ""]
+    if plan.get("day_card"):
+        out += [f"## {L('한눈에 보는 일정 카드', 'Day card')}", ""] + [f"- {x}" for x in plan["day_card"]] + [""]
+    if plan.get("phrase_cards"):
+        out += [f"## {L('현장 확인 문장', 'Show this to staff')}", ""]
+        for c in plan["phrase_cards"]:
+            out += [f"> **{c.get('person', '')} · {c.get('situation', '')}**  ", f"> ### {c.get('show_to_staff', '')}  ",
+                    f"> _{c.get('meaning', '')}_", ""]
     if (plan.get("deliverable_text") or "").strip():
         out += [f"## {L('요청 결과물', 'Deliverable')}", "", plan["deliverable_text"].strip(), ""]
 
@@ -341,7 +374,8 @@ def run(cfg: Config) -> dict:
         if cfg.visitor_type == "auto":
             vt = agent_plan.get("visitor_type")
             cfg.visitor_type = vt if vt in ("foreign", "korean") else "foreign"
-            cfg.language = cfg.language or str(agent_plan.get("language") or ("en" if cfg.visitor_type == "foreign" else "ko"))[:5]
+            cfg.language = (cfg.language or _detect_language(task, docs) or _norm_lang(agent_plan.get("language"))
+                            or ("en" if cfg.visitor_type == "foreign" else "ko"))
             _progress(f"   렌즈 자동 판단: {cfg.visitor_type} / 언어 {cfg.language}")
         visit_date = visit_date or agent_plan.get("visit_date")
         ext_docs, tool_log = run_tools(agent_plan, tools, visit_date)

@@ -148,6 +148,9 @@ function render(d){
   const ev=ids=>(ids||[]).map(i=>`<span class="tag">${esc(src[i]||i)}</span>`).join('');
   const cnt=k=>A.filter(e=>e.kind===k).length;
   let h=`<h2>${esc(P.title)}</h2><p><span class="tag warn">초안 · 예약/발송하지 않음</span> <span class="tag">${esc(R.lens?.visitor_type)} / ${esc((R.lens?.interests||[]).join(', '))}</span> <span class="tag">방문일 ${esc(R.visit_date)}</span></p><p>${esc(P.summary)}</p>`;
+  if((P.day_card||[]).length)h+=`<h2>📱 한눈에 보는 일정 카드</h2><div class="card"><ul>${P.day_card.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`;
+  if((P.phrase_cards||[]).length)h+=`<h2>🗣 현장 직원에게 보여주세요</h2>`+P.phrase_cards.map(c=>`<div class="card" style="border-color:var(--acc)"><div class="sub">${esc(c.person)} · ${esc(c.situation)}</div><div style="font-size:24px;line-height:1.4;margin:6px 0">${esc(c.show_to_staff)}</div><div class="sub">${esc(c.meaning)}</div></div>`).join('');
+  if((P.deliverable_text||'').trim())h+=`<h2>요청 결과물</h2><div class="card" style="white-space:pre-wrap">${esc(P.deliverable_text)}</div>`;
   h+=`<h2>일정</h2><div class="card"><table><tr><th>시간</th><th>장소</th><th>활동</th><th>접근·주의</th><th>근거</th></tr>`+(P.itinerary||[]).map(i=>`<tr><td>${esc(i.time)}</td><td>${esc(i.place)}</td><td>${esc(i.activity)}</td><td>${esc(i.access_notes)}</td><td>${ev(i.evidence)}</td></tr>`).join('')+`</table></div>`;
   h+=`<h2>음식 제한</h2>`+(P.dietary_plan||[]).map(x=>`<div class="card"><b>${esc(x.person)}</b> ${(x.needs||[]).map(n=>`<span class="tag bad">${esc(n)}</span>`).join('')}<div>${esc(x.guidance)}</div><div class="sub">현장 확인: ${esc(x.ask_on_site)}</div>${ev(x.evidence)}</div>`).join('');
   h+=`<h2>해설</h2>`+(P.interpretation||[]).map(x=>`<div class="card"><b>${esc(x.place)}</b><div>${esc(x.text)}</div><div class="warn">주의: ${esc(x.caveats)}</div>${ev(x.evidence)}</div>`).join('');
