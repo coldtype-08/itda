@@ -52,7 +52,8 @@ def _force_untrusted(doc: Doc, r: dict) -> dict:
     if (_EXFIL_VERB.search(doc.text) and _EXTERNAL_HOST.search(doc.text)) or _OVERRIDE.search(doc.text):
         if not r.get("contains_instructions_to_agent") or r.get("source_type") != "external_instruction":
             r = {**r, "contains_instructions_to_agent": True, "source_type": "external_instruction",
-                 "reliability": "untrusted", "relevant": False,
+                 "reliability": "untrusted", "relevant": False, "trust": "ignore",
+                 "trust_reason": "외부 호스트로 자료 전송을 요구하는 외부 지시 (코드 규칙)",
                  "instruction_summary": r.get("instruction_summary") or "외부 호스트로 자료 전송을 요구하는 문구",
                  "forced_by_rule": "exfiltration request to external host"}
     return r
@@ -313,6 +314,16 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
         for c in plan["phrase_cards"]:
             out += [f"> **{c.get('person', '')} · {c.get('situation', '')}**  ", f"> ### {c.get('show_to_staff', '')}  ",
                     f"> _{c.get('meaning', '')}_", ""]
+    if plan.get("decisions"):
+        out += [f"## {L('핵심 결정 (불완전한 정보에서)', 'Key decisions under uncertainty')}", "",
+                f"| {L('질문', 'Question')} | {L('선택', 'Choice')} | {L('이유', 'Why')} | {L('틀리면', 'Risk if wrong')} |",
+                "|---|---|---|---|"]
+        out += [f"| {d.get('question', '')} | **{d.get('choice', '')}** | {d.get('why', '')} | {d.get('risk_if_wrong', '')} |"
+                for d in plan["decisions"]] + [""]
+    if plan.get("scenarios"):
+        out += [f"## {L('상황별 대안 (Plan B)', 'Scenarios (Plan B)')}", ""]
+        out += [f"- **{L('만약', 'If')}** {x.get('if', '')} → {x.get('then', '')} — {ev(x.get('evidence'))}"
+                for x in plan["scenarios"]] + [""]
     if (plan.get("deliverable_text") or "").strip():
         out += [f"## {L('요청 결과물', 'Deliverable')}", "", plan["deliverable_text"].strip(), ""]
 
@@ -343,6 +354,12 @@ def render_markdown(cfg: Config, plan: dict, resolved: dict, triaged: list[dict]
         over = "; ".join(f"`{id2path.get(o.get('doc'), o.get('doc'))}` {o.get('reason', '')}" for o in f.get("overridden") or [])
         out.append(f"| {f.get('topic', '')}: {f.get('subject', '')} | {f.get('decision', '')} | {f.get('status', '')} | "
                    f"**{f.get('decided_by', '')}** — {f.get('rationale', '')} | {over or '-'} |")
+
+    out += ["", f"## {L('자료 신뢰 판정', 'Source trust verdicts')}", "",
+            f"| {L('자료', 'Source')} | {L('종류', 'Type')} | {L('판정', 'Verdict')} | {L('이유', 'Reason')} |",
+            "|---|---|---|---|"]
+    for t in triaged:
+        out.append(f"| `{t.get('path')}` | {t.get('source_type', '')} | **{t.get('trust', '')}** | {t.get('trust_reason', '')} |")
 
     bullets(L("확인 필요", "Needs confirmation"), plan.get("uncertainties"))
     bullets(L("승인 필요 (수행하지 않음)", "Needs approval (not performed)"), plan.get("approvals_needed"))
@@ -407,7 +424,8 @@ def run(cfg: Config) -> dict:
         "tool_calls": [{"tool": x["call"].get("tool"), "args": x["call"].get("args"), "why": x["call"].get("why"),
                         "ok": x["result"].get("ok"), "error": x["result"].get("error")} for x in tool_log],
         "sources": [{k: t.get(k) for k in ("id", "path", "relevant", "source_type", "reliability",
-                                            "doc_date", "contains_instructions_to_agent")} for t in triaged],
+                                            "doc_date", "content_date", "scope", "integrity",
+                                            "trust", "trust_reason", "contains_instructions_to_agent")} for t in triaged],
     }
     guard.write_text("itda_result.json", json.dumps(result, ensure_ascii=False, indent=2))
     guard.write_text("course_draft.md", render_markdown(cfg, plan, resolved, triaged))
