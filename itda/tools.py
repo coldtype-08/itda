@@ -133,7 +133,7 @@ class Tools:
         """Korea Tourism Organization search + detail for the top hits: hours, closed days, fees, overview."""
         svc = "EngService2" if lang == "en" else "KorService2"
         common = {"MobileOS": "ETC", "MobileApp": "ITDA", "_type": "json"}
-        key = os.environ["DATA_GO_KR_KEY"]  # inside the sandbox this is an OpenShell placeholder
+        key = os.environ["DATA_GO_KR_KEY"]  # from ~/.itda.env; passed into the sandbox only with ITDA_SANDBOX_TOOL_KEYS
 
         def get(op: str, **params) -> list:
             qs = urllib.parse.urlencode({**common, **params})
