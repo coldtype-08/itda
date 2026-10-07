@@ -102,11 +102,26 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *a) -> None:  # quiet
         pass
 
+    def _authorized(self, q: dict) -> bool:
+        """Optional shared token (ITDA_WEB_TOKEN) for a publicly tunnelled demo: open the page once
+        with ?t=<token>; a cookie carries it afterwards. Without the env var the UI is open."""
+        tok = os.environ.get("ITDA_WEB_TOKEN")
+        return not tok or q.get("t") == tok or f"itda_t={tok}" in (self.headers.get("Cookie") or "")
+
     def do_GET(self) -> None:
         u = urlparse(self.path)
         q = {k: v[0] for k, v in parse_qs(u.query).items()}
+        if not self._authorized(q):
+            return self._send(401, "<p>접근 토큰이 필요합니다: 공유받은 링크(?t=...)로 접속하세요.</p>".encode(), "text/html")
         if u.path in ("/", "/index.html"):
-            self._send(200, PAGE.encode(), "text/html")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            if os.environ.get("ITDA_WEB_TOKEN"):
+                self.send_header("Set-Cookie", f"itda_t={os.environ['ITDA_WEB_TOKEN']}; Path=/; HttpOnly; SameSite=Lax")
+            body = PAGE.encode()
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
         elif u.path == "/status" and q.get("job") in JOBS:
             j = JOBS[q["job"]]
             self._json({"lines": j["lines"][-200:], "done": j["done"], "ok": j["ok"],
@@ -117,6 +132,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"error": "not found"}, 404)
 
     def do_POST(self) -> None:
+        if not self._authorized({}):
+            return self._json({"error": "unauthorized"}, 401)
         if urlparse(self.path).path != "/run":
             return self._json({"error": "not found"}, 404)
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0)) or b"{}"))

@@ -38,6 +38,7 @@ class LLM:
         # and can eat the whole max_tokens budget. Turn it off unless ITDA_THINKING=1.
         self.no_think = os.environ.get("ITDA_THINKING") != "1"
         self.no_think_supported = True
+        self.small_disabled = False  # set after the small endpoint is denied once
 
     def _base(self, model: str) -> str:
         if self.cfg.small_base_url and model == self.cfg.model_small:
@@ -60,6 +61,8 @@ class LLM:
     def chat(self, messages: list[dict], model: str, temperature: float = 0.1,
              max_tokens: int = 8192, label: str = "") -> str:
         last: Exception | None = None
+        if self.small_disabled and model == self.cfg.model_small:
+            model = self.cfg.model_fast
         for attempt in range(3):
             body = {"model": model, "messages": messages, "temperature": temperature,
                     "max_tokens": max_tokens, **self.extra}
@@ -85,7 +88,16 @@ class LLM:
                 last = e
                 self.audit.log("llm_call", label=label, model=model, ok=False, status=e.code)
                 if e.code in (401, 403):
-                    raise LLMAuthError(f"{e.code} from {self.cfg.llm_base_url} — API 키/권한을 확인하세요") from e
+                    if model == self.cfg.model_small and model != self.cfg.model_fast:
+                        # The small local model is an accelerator, not a dependency: if its endpoint is
+                        # unreachable or denied (e.g. sandbox policy), fall back to the fast model.
+                        self.audit.log("small_model_fallback", status=e.code, endpoint=self._base(model))
+                        print(f"      · {label}: small model endpoint {self._base(model)} returned {e.code} "
+                              f"→ falling back to {self.cfg.model_fast}", file=sys.stderr, flush=True)
+                        model = self.cfg.model_fast
+                        self.small_disabled = True
+                        continue
+                    raise LLMAuthError(f"{e.code} from {self._base(model)} — API 키/권한 또는 샌드박스 정책을 확인하세요") from e
                 if e.code == 400 and self.no_think_supported and "chat_template_kwargs" not in self.extra:
                     self.no_think_supported = False  # endpoint rejects the knob; retry without it
                     continue
