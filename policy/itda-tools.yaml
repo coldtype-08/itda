@@ -40,3 +40,23 @@ network_policies:
           - allow: { method: GET, path: "/B551011/**" }   # 한국관광공사 only
           - allow: { method: GET, path: "/1360000/**" }   # 기상청
     binaries: *py
+  itda_naver_search:
+    name: itda-naver-search
+    endpoints:
+      - host: openapi.naver.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/v1/search/**" }   # search only, no other Naver APIs
+    binaries: *py
+  itda_brave_search:
+    name: itda-brave-search
+    endpoints:
+      - host: api.search.brave.com
+        port: 443
+        protocol: rest
+        enforcement: enforce
+        rules:
+          - allow: { method: GET, path: "/res/v1/web/search" }
+    binaries: *py

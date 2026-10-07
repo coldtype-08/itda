@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from typing import Callable
@@ -23,6 +24,8 @@ ALLOWED_HOSTS = {
     "api.open-meteo.com", "geocoding-api.open-meteo.com",
     "api.tavily.com",
     "apis.data.go.kr",
+    "openapi.naver.com",
+    "api.search.brave.com",
 }
 UA = "ItDA-hackathon-agent/0.1 (K-culture course drafts)"
 TOUR_BASE = os.environ.get("ITDA_TOUR_BASE", "https://apis.data.go.kr/B551011")
@@ -41,6 +44,8 @@ class Tools:
             "weather": self.weather,
             "tavily": self.tavily,
             "tour": self.tour,
+            "naver": self.naver,
+            "brave": self.brave,
         }
 
     # ---- plumbing -------------------------------------------------------------------------
@@ -50,6 +55,11 @@ class Tools:
             out["tavily"] = "일반 웹 검색 (Tavily)"
         if os.environ.get("DATA_GO_KR_KEY"):
             out["tour"] = "한국관광공사 관광정보 키워드 검색 (공공데이터포털)"
+        if os.environ.get("NAVER_CLIENT_ID") and os.environ.get("NAVER_CLIENT_SECRET"):
+            out["naver"] = ("네이버 검색. kind=local(장소·주소) | encyc(지식백과) | news(최근 소식) | blog(후기, 신뢰 낮음). "
+                            "국내 장소·한국어 정보에 우선 사용")
+        if os.environ.get("BRAVE_API_KEY"):
+            out["brave"] = "Brave 웹 검색 (해외·영어 자료)"
         return out
 
     def _http(self, url: str, body: dict | None = None, headers: dict | None = None) -> dict:
@@ -120,3 +130,25 @@ class Tools:
         items = items.get("item", []) if isinstance(items, dict) else []
         return {"keyword": keyword, "results": [{"title": i.get("title"), "addr": i.get("addr1"),
                                                  "contentid": i.get("contentid")} for i in items[:5]]}
+
+    def naver(self, query: str, kind: str = "local") -> dict:
+        kind = kind if kind in ("local", "encyc", "news", "blog", "webkr") else "local"
+        q = urllib.parse.quote(query)
+        r = self._http(f"https://openapi.naver.com/v1/search/{kind}.json?query={q}&display=5",
+                       headers={"X-Naver-Client-Id": os.environ["NAVER_CLIENT_ID"],
+                                "X-Naver-Client-Secret": os.environ["NAVER_CLIENT_SECRET"]})
+        strip = lambda t: re.sub(r"<[^>]+>", "", t or "")
+        items = [{"title": strip(i.get("title")), "desc": strip(i.get("description"))[:300],
+                  "address": i.get("roadAddress") or i.get("address"), "category": i.get("category"),
+                  "date": i.get("postdate") or i.get("pubDate"), "link": i.get("link")}
+                 for i in r.get("items", [])]
+        return {"query": query, "kind": kind, "results": items}
+
+    def brave(self, query: str) -> dict:
+        q = urllib.parse.quote(query)
+        r = self._http(f"https://api.search.brave.com/res/v1/web/search?q={q}&count=5",
+                       headers={"X-Subscription-Token": os.environ["BRAVE_API_KEY"]})
+        return {"query": query, "results": [{"title": x.get("title"), "url": x.get("url"),
+                                             "desc": re.sub(r"<[^>]+>", "", x.get("description") or "")[:400],
+                                             "age": x.get("age")}
+                                            for x in (r.get("web") or {}).get("results", [])]}

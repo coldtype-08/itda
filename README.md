@@ -69,5 +69,7 @@ TODO(데모 담당): 데모 URL 또는 단계별 확인 방법
 | 위키백과 REST API | 실존 장소·시대의 일반 배경 | GET, `ko/en.wikipedia.org` |
 | Open-Meteo | 방문일 일기예보 | GET, `api.open-meteo.com`, `geocoding-api.open-meteo.com` |
 | Tavily (키 있을 때) | 일반 웹 검색 | `POST api.tavily.com/search` |
+| 네이버 검색 API (키 있을 때) | 국내 장소·지식백과·뉴스·블로그 | `GET openapi.naver.com/v1/search/**` |
+| Brave Search (키 있을 때) | 해외·영어 웹 검색 | `GET api.search.brave.com/res/v1/web/search` |
 | 공공데이터포털 (키 있을 때) | 관광공사 국문/영문 관광정보 | GET `apis.data.go.kr/B551011/**` |
 | (선택) L40S 로컬 NIM | 개인정보가 포함된 단계의 로컬 추론 | `host.openshell.internal:8000` 한정 |
