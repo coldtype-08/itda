@@ -96,12 +96,12 @@ class LLM:
         raise LLMError(f"LLM call failed ({label}): {last}")
 
     def chat_json(self, system: str, user: str, model: str, label: str,
-                  mock: Callable[[], Any]) -> Any:
+                  mock: Callable[[], Any], temperature: float = 0.1) -> Any:
         if self.cfg.mock:
             self.audit.log("llm_call", label=label, model="mock", ok=True)
             return mock()
         messages = [{"role": "system", "content": system}, {"role": "user", "content": user}]
-        text = self.chat(messages, model=model, label=label)
+        text = self.chat(messages, model=model, label=label, temperature=temperature)
         try:
             return extract_json(text)
         except ValueError:

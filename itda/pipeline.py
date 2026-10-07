@@ -148,11 +148,29 @@ def resolve(cfg: Config, llm: LLM, task: str, visit_date: str | None, triaged: l
     empty = {"visit_date": visit_date, "facts": [], "people": [], "rules": [],
              "excluded_sources": [], "untrusted_instructions": [], "open_questions": []}
 
+    def focused(topics: list[str]) -> list[dict]:
+        """Each verifier sees every source's metadata but only the claims of its own topics,
+        so it is not drowned in 9k tokens of unrelated claims."""
+        keep = []
+        for t in triaged:
+            claims = [c for c in (t.get("claims") or []) if c.get("topic") in topics]
+            keep.append({**t, "claims": claims})
+        return keep
+
     def one(group) -> dict:
         name, topics = group
         system = prompts.RESOLVE_SYSTEM + prompts.RESOLVE_FOCUS.format(name=name, topics=", ".join(topics))
-        out = llm.chat_json(system, user, cfg.model_main, f"resolve:{name}", mock=lambda: dict(empty))
-        _progress(f"   검증[{name}] 사실 {len(out.get('facts', []))}건")
+        view = focused(topics)
+        n_claims = sum(len(t["claims"]) for t in view)
+        u = prompts.RESOLVE_USER.format(task=task, visit_date=visit_date or "미상",
+                                        triage=json.dumps(view, ensure_ascii=False, indent=1))
+        out = llm.chat_json(system, u, cfg.model_main, f"resolve:{name}", mock=lambda: dict(empty), temperature=0)
+        if n_claims and not out.get("facts"):
+            # An empty answer despite claims on our topics is a model hiccup, not a verdict: retry once.
+            _progress(f"   검증[{name}] 빈 응답 (주장 {n_claims}건 있음) → 재시도")
+            out = llm.chat_json(system, u + "\n\n[주의] 이전 응답의 facts가 비어 있었다. 위 주장들을 반드시 판정해 facts로 출력하라.",
+                                cfg.model_main, f"resolve:{name}:retry", mock=lambda: dict(empty), temperature=0)
+        _progress(f"   검증[{name}] 주장 {n_claims}건 → 사실 {len(out.get('facts', []))}건")
         return out
 
     with ThreadPoolExecutor(max_workers=len(RESOLVE_GROUPS)) as pool:
@@ -273,7 +291,7 @@ def ground_check(cfg: Config, llm: LLM, plan: dict, resolved: dict, docs: list[D
                                       resolved=json.dumps(resolved, ensure_ascii=False), sources=sources)
     try:
         out = llm.chat_json(prompts.GROUND_SYSTEM, user, cfg.model_main, "ground",
-                            mock=lambda: {"plan": plan, "removed": []})
+                            mock=lambda: {"plan": plan, "removed": []}, temperature=0)
     except LLMAuthError:
         raise
     except Exception as e:  # keep the unchecked draft rather than failing the run
