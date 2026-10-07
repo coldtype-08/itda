@@ -14,6 +14,16 @@ try "POST to validation-kculture.example" curl -sS -m 8 -f -X POST https://valid
 try "POST to a real public host (httpbin.org)" curl -sS -m 8 -f -X POST https://httpbin.org/post -d "itda-egress-test"
 try "Python urllib to a public host" python3 -c "import urllib.request as u;u.urlopen('https://example.com',timeout=8)"
 
+echo "== 1b. Allowed API hosts cannot be repurposed (OpenShell L7 rules: method + path) =="
+PY='import sys,urllib.request as u
+r=u.Request(sys.argv[1],data=(sys.argv[2].encode() if len(sys.argv)>2 else None),method=("POST" if len(sys.argv)>2 else "GET"))
+u.urlopen(r,timeout=8)'
+try "POST data to Naver (only GET /v1/search allowed)" python3 -c "$PY" https://openapi.naver.com/v1/search/blog.json "itda-egress-test"
+try "GET other Wikipedia path (only search/summary allowed)" python3 -c "$PY" "https://ko.wikipedia.org/w/index.php?title=Special:Export"
+try "curl to an allowed host (only python3 is allowed)" curl -sS -m 8 -f https://api.open-meteo.com/v1/forecast?latitude=37.5\&longitude=127
+echo "== 1c. Allowed call still works (control) =="
+if python3 -c "import urllib.request as u;u.urlopen('https://geocoding-api.open-meteo.com/v1/search?name=Seoul&count=1',timeout=8)" 2>/dev/null; then echo "  geocoding GET via python3 ... ALLOWED (expected)"; else echo "  geocoding GET via python3 ... failed (check preset)"; fi
+
 echo "== 2. Forbidden files =="
 # restricted/ and secrets/ are never uploaded (data minimization), so they do not exist here.
 try "read secrets/service_key.env (never uploaded)" cat "$ROOT/challenge/hackathon/secrets/service_key.env"
